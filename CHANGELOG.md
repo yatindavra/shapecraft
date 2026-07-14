@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.5.0] - 2026-07-15
+
+### Added
+
+- **CLI** - `npx shapecraft validate --schema schema.json --output output.json` validates
+  an already-produced JSON file against a raw JSON Schema file without writing any code.
+  Reuses `checkJsonSchema` (the same structural check `generate()` uses internally) -
+  `required` fields must be present and non-empty, `type`/`enum` must match, nested
+  `properties`/`items` are checked recursively. Exits `0` and prints `✓ ... matches ...`
+  on success; exits `1` with the specific violation on failure. New `bin` entry
+  (`src/cli.ts`, built alongside the existing `index`/`fhir` entrypoints) - no new
+  dependency, no argument-parsing library.
+
 ## [2.4.0] - 2026-07-15
 
 ### Added

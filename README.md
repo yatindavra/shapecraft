@@ -677,6 +677,16 @@ try {
 
 A handler that throws — including the terminal skill's own handler — doesn't abort the loop. It's recorded as an error turn and fed back to the model, which can adapt (different arguments, a different skill, or try again) on the next turn. The loop only ever exits early via a thrown `MaxSkillTurnsExceededError`; a successful terminal-skill call is the only path to `{ status: "complete" }`.
 
+## CLI
+
+Validate an already-produced JSON file against a raw JSON Schema file, without writing any code:
+
+```bash
+npx shapecraft validate --schema schema.json --output output.json
+```
+
+`schema.json` is a raw JSON Schema (the same shape as the `{ jsonSchema }` `SchemaInput`), `output.json` is the data to check against it. Runs the same `checkJsonSchema` structural check `generate()` uses internally — `required` fields must be present and non-empty, `type`/`enum` must match, nested `properties`/`items` are checked recursively. Exits `0` and prints `✓ ... matches ...` on success; exits `1` and prints the specific violation (e.g. `Missing required property: "age"`) on failure. Useful in CI to check a fixture or a recorded model output against a schema without spinning up a full `generate()` call.
+
 ## What shapecraft guarantees — and what it doesn't
 
 Every mechanism above (`native`, `constrained`, `best-effort` + retry) targets one thing: **the output is structurally valid** — it parses, the types match, required fields are present and non-empty. That's a real, load-bearing guarantee: it's the difference between code that can trust `result.data.age` is a `number` versus code that has to defensively re-check everything the model says.
