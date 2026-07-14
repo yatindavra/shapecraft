@@ -1,0 +1,140 @@
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+
+:root {
+  /* Design tokens: black-canvas dark theme with charcoal surface-lift elevation,
+     tight-display/relaxed-body typographic contrast, per-context accent identity.
+     Light theme synthesized from the same structural rules (surface-lift, hairlines,
+     tight-display/relaxed-body typography) since the source system only documents dark. */
+  --sc-font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+
+  --sc-radius-xs: 4px;
+  --sc-radius-sm: 6px;
+  --sc-radius-md: 8px;
+  --sc-radius-lg: 12px;
+  --sc-radius-xl: 16px;
+  --sc-radius-xxl: 24px;
+  --sc-radius-pill: 9999px;
+
+  --sc-space-hair: 1px;
+  --sc-space-xxs: 4px;
+  --sc-space-xs: 8px;
+  --sc-space-sm: 12px;
+  --sc-space-md: 16px;
+  --sc-space-lg: 24px;
+  --sc-space-xl: 32px;
+  --sc-space-xxl: 48px;
+  --sc-space-section: 96px;
+
+  /* Light theme */
+  --sc-canvas: #ffffff;
+  --sc-surface-1: #f5f6f8;
+  --sc-surface-2: #eaecf0;
+  --sc-surface-3: #d8dbe0;
+  --sc-hairline: rgba(11, 13, 18, 0.1);
+  --sc-hairline-soft: #e2e4e8;
+  --sc-inverse-canvas: #0b0d12;
+  --sc-inverse-ink: #ffffff;
+
+  --sc-ink: #0b0d12;
+  --sc-ink-muted: #55595f;
+  --sc-ink-subtle: #8a8f98;
+
+  --sc-accent-blue: #1868d6;
+  --sc-success: #00875f;
+  --sc-warning: #a15c00;
+  --sc-error: #c92a1e;
+
+  --sc-level-native: var(--sc-success);
+  --sc-level-constrained: var(--sc-warning);
+  --sc-level-best-effort: var(--sc-accent-blue);
+
+  --vp-font-family-base: var(--sc-font-sans);
+  --vp-font-family-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+
+  --vp-c-bg: var(--sc-canvas);
+  --vp-c-bg-alt: var(--sc-surface-1);
+  --vp-c-bg-soft: var(--sc-surface-2);
+  --vp-c-bg-elv: var(--sc-surface-1);
+
+  --vp-c-text-1: var(--sc-ink);
+  --vp-c-text-2: var(--sc-ink-muted);
+  --vp-c-text-3: var(--sc-ink-subtle);
+
+  --vp-c-border: var(--sc-hairline);
+  --vp-c-divider: var(--sc-hairline-soft);
+  --vp-c-gutter: var(--sc-hairline-soft);
+
+  --vp-c-brand-1: var(--sc-accent-blue);
+  --vp-c-brand-2: #1454ad;
+  --vp-c-brand-3: #0f4088;
+  --vp-c-brand-soft: var(--sc-surface-2);
+
+  --vp-button-brand-bg: var(--sc-inverse-canvas);
+  --vp-button-brand-hover-bg: #262a33;
+  --vp-button-brand-active-bg: #3a3f4a;
+  --vp-button-brand-text: var(--sc-inverse-ink);
+  --vp-button-brand-border: var(--sc-inverse-canvas);
+
+  --vp-code-bg: var(--sc-surface-1);
+  --vp-code-block-bg: var(--sc-surface-1);
+  --vp-code-color: var(--sc-ink);
+
+  --vp-shadow-1: none;
+  --vp-shadow-2: none;
+  --vp-shadow-3: none;
+  --vp-shadow-4: none;
+  --vp-shadow-5: none;
+}
+
+.dark {
+  /* Dark theme - canonical design-reference values */
+  --sc-canvas: #000000;
+  --sc-surface-1: #15181e;
+  --sc-surface-2: #1f232b;
+  --sc-surface-3: #3b3d45;
+  --sc-hairline: rgba(178, 182, 189, 0.16);
+  --sc-hairline-soft: #252830;
+  --sc-inverse-canvas: #ffffff;
+  --sc-inverse-ink: #000000;
+
+  --sc-ink: #ffffff;
+  --sc-ink-muted: #b2b6bd;
+  --sc-ink-subtle: #656a76;
+
+  --sc-accent-blue: #2b89ff;
+  --sc-success: #00ca8e;
+  --sc-warning: #ffcf25;
+  --sc-error: #e62b1e;
+
+  --vp-c-bg: var(--sc-canvas);
+  --vp-c-bg-alt: var(--sc-surface-1);
+  --vp-c-bg-soft: var(--sc-surface-2);
+  --vp-c-bg-elv: var(--sc-surface-1);
+
+  --vp-c-text-1: var(--sc-ink);
+  --vp-c-text-2: var(--sc-ink-muted);
+  --vp-c-text-3: var(--sc-ink-subtle);
+
+  --vp-c-border: var(--sc-hairline);
+  --vp-c-divider: var(--sc-hairline-soft);
+  --vp-c-gutter: var(--sc-hairline-soft);
+
+  --vp-c-brand-1: var(--sc-accent-blue);
+  --vp-c-brand-2: #5aa3ff;
+  --vp-c-brand-3: #1868d6;
+  --vp-c-brand-soft: var(--sc-surface-2);
+
+  --vp-button-brand-bg: var(--sc-inverse-canvas);
+  --vp-button-brand-hover-bg: #e5e5e5;
+  --vp-button-brand-active-bg: #cccccc;
+  --vp-button-brand-text: var(--sc-inverse-ink);
+  --vp-button-brand-border: var(--sc-inverse-canvas);
+
+  --vp-code-bg: var(--sc-surface-1);
+  --vp-code-block-bg: var(--sc-surface-1);
+  --vp-code-color: var(--sc-ink);
+}

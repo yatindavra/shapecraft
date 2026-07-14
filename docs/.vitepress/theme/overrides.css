@@ -1,0 +1,123 @@
+/* Radius vocabulary: 8px on CTAs/inputs, 12px on cards - no drop shadows, surface-lift only */
+
+* {
+  box-shadow: none !important;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+.VPNav,
+.VPNavBar,
+.VPFooter {
+  border-radius: 0 !important;
+}
+
+.VPButton,
+input.DocSearch-Input,
+.DocSearch-Button,
+code,
+.vp-doc code {
+  border-radius: var(--sc-radius-md) !important;
+}
+
+/* Radius only on discrete cards - NOT on .VPSidebar/.VPContent, which are
+   full-height overflow:auto layout panels. border-radius + overflow:auto on
+   the same element insets the native scrollbar away from the border line,
+   causing the sidebar's edge and scrollbar to visibly misalign/overlap. */
+.vp-doc div[class*="language-"],
+.vp-doc table,
+.custom-block {
+  border-radius: var(--sc-radius-lg) !important;
+}
+
+.VPNavBar {
+  border-bottom: 1px solid var(--sc-hairline-soft);
+}
+
+.VPNavBar .divider,
+.VPSidebarItem .divider {
+  border-color: var(--sc-hairline-soft) !important;
+}
+
+.VPSidebar {
+  border-right: 1px solid var(--sc-hairline-soft);
+}
+
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3 {
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+
+.vp-doc h2 {
+  /* VitePress's default h2 pairs margin-top:48px with padding-top:24px to
+     sit below a border-top rule. We move the divider to border-bottom
+     instead, so padding-top must reset to 0 - otherwise it's an orphaned
+     24px gap with nothing marking it, on top of the 48px margin. */
+  margin-top: 40px;
+  padding-top: 0;
+  border-top: none;
+  border-bottom: 1px solid var(--sc-hairline-soft);
+  padding-bottom: var(--sc-space-xs);
+}
+
+@media (max-width: 639px) {
+  .vp-doc h2 {
+    margin-top: 32px;
+  }
+
+  .VPDoc {
+    padding-left: var(--sc-space-lg) !important;
+    padding-right: var(--sc-space-lg) !important;
+  }
+}
+
+.vp-doc a {
+  color: var(--sc-accent-blue);
+}
+
+.VPFooter {
+  border-top: 1px solid var(--sc-hairline-soft);
+}
+
+.vp-doc div[class*="language-"] {
+  background: var(--sc-surface-1) !important;
+  border: 1px solid var(--sc-hairline);
+  /* VitePress's default margin:8px 0 on code blocks reads as cramped next to
+     a paragraph's margin:16px 0 - bump to match the surrounding prose rhythm. */
+  margin: var(--sc-space-lg) 0 !important;
+}
+
+/* DocSearch modal + button - text-input spec */
+.DocSearch-Button {
+  background: var(--sc-surface-1) !important;
+  border: 1px solid var(--sc-hairline) !important;
+}
+
+.DocSearch-Button:hover {
+  background: var(--sc-surface-2) !important;
+  border-color: var(--sc-accent-blue) !important;
+}
+
+/* Hero logo light/dark swap - kept out of Hero.vue's scoped <style> because
+   Vue's :global(.dark) descendant-combinator selector was mis-merged by the
+   minifier into a bare ".dark { display: none }" rule, hiding elements
+   site-wide instead of just the logo variant. !important is needed here
+   because Hero.vue's own scoped ".sc-hero-logo[data-v-hash]" rule carries a
+   higher-specificity attribute selector that otherwise wins over these
+   plain-class rules in this separate, unscoped stylesheet. */
+.sc-hero-logo-dark {
+  display: none !important;
+}
+
+.dark .sc-hero-logo-light {
+  display: none !important;
+}
+
+.dark .sc-hero-logo-dark {
+  display: block !important;
+}
