@@ -8,3 +8,9 @@ dist/
 !CHANGELOG.md
 !CONTRIBUTING.md
 !.github/**/*.md
+!docs/**/*.md
+
+docs/.vitepress/dist
+docs/.vitepress/cache
+docs/node_modules
+docs/preview.log
