@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.2.0] - 2026-07-15
+
+### Added
+
+- Multi-agent orchestration via `@aviasole/shapecraft/agentic` entrypoint - `defineAgent()` +
+  `runAgents()`. Chains sequential, dependent `generate()` calls (each with its own
+  model/schema/role), threading one step's *validated* output into the next via a
+  caller-written `router` function. Each step keeps its own retry/guarantee-level behavior;
+  no new validation engine. See README `## Multi-agent orchestration`.
+
 ## [2.1.0] - 2026-07-10
 
 ### Added

@@ -513,6 +513,55 @@ Two things worth knowing before you rely on them:
 - **`required` is opinionated, not FHIR cardinality.** FHIR marks almost nothing mandatory (a `Patient` with no name is technically valid FHIR). These presets require a *useful* minimum for extraction (e.g. `Patient` requires name + gender + birthDate). Where FHIR genuinely mandates a field (`Observation.status`/`code`, `MedicationRequest.status`/`intent`/`subject`), that's mirrored exactly.
 - **Structural, not clinical.** A preset guarantees the resource is well-formed and required-fields-complete. It does **not** verify terminology codes (LOINC/SNOMED/RxNorm membership is not checked — a `Coding` is validated as having `system`/`code` strings, not as a real code), date formats, choice-type polymorphism (each preset commits to one `value[x]`/`medication[x]` variant), or any clinical invariant. **A structurally-valid FHIR resource is not the same as a correct or safe-to-act-on one** — see the guarantees note directly below.
 
+## Multi-agent orchestration
+
+Chain validated `generate()` calls together, behind a separate (tree-shakeable) entrypoint. An "agent" is not a new primitive — it's a `{ model, schema, role }` triple, and `runAgents()` is a loop around ordinary `generate()` calls: same retry loop, same guarantee levels as everywhere else in shapecraft.
+
+```typescript
+import { defineAgent, runAgents } from "@aviasole/shapecraft/agentic";
+import { generate, openai } from "@aviasole/shapecraft";
+import { z } from "zod";
+
+const triage = defineAgent({
+  model: openai({ model: "gpt-4o-mini" }),
+  schema: z.object({ category: z.enum(["billing", "technical", "general"]) }),
+  role: "triage",
+});
+
+const technical = defineAgent({
+  model: openai({ model: "gpt-4o-mini" }),
+  schema: z.object({ diagnosis: z.string(), steps: z.array(z.string()) }),
+  role: "technical",
+});
+
+const result = await runAgents(
+  { triage, technical },
+  "My app crashes when I upload a file over 10MB",
+  {
+    router: (last, history) => {
+      if (!last) return "triage";
+      if (last.role === "triage" && (last.data as { category: string }).category === "technical") return "technical";
+      return "done";
+    },
+    maxTurns: 5,
+  }
+);
+
+console.log(result.trace); // [{ role: "triage", data: {...}, metadata: {...} }, { role: "technical", ... }]
+console.log(result.final); // last step's validated data
+```
+
+The `router` is a plain function you write — full control over branching, no hidden state machine. Each agent's prompt defaults to a JSON-stringified copy of the previous step's *validated* `data` (never raw/unvalidated model text); override per-agent with `buildPrompt`.
+
+What this does and doesn't guarantee:
+
+- **Each step is validated** exactly as strongly as a standalone `generate()` call with that model/schema. Orchestration adds zero new validation weakness per step.
+- **The chain as a whole is not validated** — nothing checks the *sequence* of agents was "correct" or that one step's output is semantically consistent with the next. That's the router's responsibility, same as any hand-written control flow.
+- **Routing is deterministic and caller-owned**, not learned/inferred by a model. If you want a model to decide routing, put that decision inside an agent's own schema (e.g. triage's `category` field) and read it in your router.
+- **No loop-prevention beyond `maxTurns`** (default 10) — a router that never returns `"done"` throws `MaxTurnsExceededError`, same blunt guard `TurnaroundOptions.maxTurns` uses.
+
+Out of scope for v1: concurrent/parallel agents (use `generateBatch()` for independent work), autonomous routing, tool-calling within a step, shared mutable state across agents, and persisted/resumable chains.
+
 ## What shapecraft guarantees — and what it doesn't
 
 Every mechanism above (`native`, `constrained`, `best-effort` + retry) targets one thing: **the output is structurally valid** — it parses, the types match, required fields are present and non-empty. That's a real, load-bearing guarantee: it's the difference between code that can trust `result.data.age` is a `number` versus code that has to defensively re-check everything the model says.
