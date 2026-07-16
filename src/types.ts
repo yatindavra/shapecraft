@@ -43,8 +43,58 @@ export type XmlInput = {
 export type SchemaInput<T = unknown> = z.ZodType<T> | JsonSchemaInput | PatternInput | ValidatorInput | XmlInput | GbnfInput;
 
 export interface ChatMessage {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   content: string;
+  /** Present on an assistant message that requested tool(s) instead of/alongside a final answer. */
+  toolCalls?: ToolCall[];
+  /** Present on a "tool" role message - correlates the result back to the call that produced it. */
+  toolCallId?: string;
+}
+
+/** A model's request to invoke one named tool with (already-parsed, not-yet-validated) arguments. */
+export interface ToolCall {
+  id: string;
+  name: string;
+  args: unknown;
+}
+
+/** Reply from `ShapecraftModel.toolCall()` - either a final answer, or one/more tool requests, never both meaningfully at once for the loop's purposes (toolCalls present means "not done yet"). */
+export interface ToolCallResponse {
+  content?: string;
+  toolCalls?: ToolCall[];
+}
+
+/**
+ * A plain `{ name, parameters, handler }` descriptor - not a class. `parameters`
+ * reuses the existing `SchemaInput` machinery, so tool arguments are validated
+ * through the same structural pipeline as any other shapecraft schema.
+ */
+export interface ToolDefinition<Args = unknown, Result = unknown> {
+  name: string;
+  description?: string;
+  parameters: SchemaInput<Args>;
+  handler: (args: Args) => Result | Promise<Result>;
+}
+
+/** One completed tool invocation in a `generateWithTools()` trace. */
+export type ToolTurn =
+  | { type: "tool-call"; call: ToolCall; result: unknown }
+  | { type: "tool-error"; call: ToolCall; error: string };
+
+export interface ToolCallOptions {
+  systemPrompt?: string;
+  /** Loop guard - throws MaxToolTurnsExceededError beyond this many turns. Default 10. */
+  maxTurns?: number;
+  /** Forwarded to the final structured-extraction generate() call once the model stops requesting tools. */
+  maxRetries?: number;
+}
+
+export interface ToolResult<T> {
+  data: T;
+  /** Every tool call made across the loop, in order. */
+  toolCalls: ToolTurn[];
+  /** Attempts taken by the final extraction generate() call (not the tool-calling turns themselves). */
+  attempts: number;
 }
 
 /**
@@ -103,6 +153,19 @@ export interface ShapecraftModel {
    * Absence ⇒ the core falls back to one-shot `generate()`.
    */
   generateStream?<T>(prompt: string, schema: SchemaInput<T>, systemPrompt?: string, callOptions?: ModelCallOptions): AsyncIterable<string>;
+  /**
+   * One native tool-calling turn - passes the running message history + tool
+   * definitions to the provider's own tool-calling API and returns either a
+   * final answer (`content`) or one/more tool requests (`toolCalls`). Absence
+   * ⇒ `capabilities.toolCalling` stays `false` and `generateWithTools()` throws
+   * immediately rather than silently degrading.
+   */
+  toolCall?(
+    messages: ChatMessage[],
+    tools: ToolDefinition[],
+    systemPrompt?: string,
+    callOptions?: ModelCallOptions
+  ): Promise<ToolCallResponse>;
 }
 
 /**
@@ -241,6 +304,28 @@ export class MaxTurnsExceededError extends Error {
   constructor(public readonly turns: number) {
     super(`Conversation did not complete after ${turns} turns`);
     this.name = "MaxTurnsExceededError";
+  }
+}
+
+export class MaxToolTurnsExceededError extends Error {
+  constructor(public readonly turns: number) {
+    super(`Tool-calling loop did not complete after ${turns} turns`);
+    this.name = "MaxToolTurnsExceededError";
+  }
+}
+
+/**
+ * A tool's own handler threw - a business-logic failure, not a structural one.
+ * Never retried the way a `SchemaViolationError` is (re-prompting the model
+ * wouldn't fix a broken handler), so `generateWithTools()` aborts immediately.
+ */
+export class ToolExecutionError extends Error {
+  constructor(
+    public readonly toolName: string,
+    public readonly cause: unknown
+  ) {
+    super(`Tool "${toolName}" handler threw: ${cause instanceof Error ? cause.message : String(cause)}`);
+    this.name = "ToolExecutionError";
   }
 }
 

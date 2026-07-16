@@ -9,6 +9,7 @@ export { SkillRegistry, generateSkillCall, runSkill, runSkillLoop } from "./core
 export { createClient } from "./core/client.js";
 export { composeMiddleware, loggingMiddleware } from "./core/middleware.js";
 export { checkJsonSchema, runValidationPipeline } from "./core/validate.js";
+export { generateWithTools, toolParametersJsonSchema } from "./core/tools.js";
 
 export * from "./backends/index.js";
 
@@ -41,6 +42,12 @@ export type {
   BatchItem,
   BatchResult,
   GenerateBatchOptions,
+  ToolCall,
+  ToolCallResponse,
+  ToolDefinition,
+  ToolTurn,
+  ToolCallOptions,
+  ToolResult,
 } from "./types.js";
 
 export type { CreateClientOptions, ShapecraftClient } from "./core/client.js";
@@ -54,4 +61,6 @@ export {
   TimeoutError,
   SkillExecutionError,
   MaxSkillTurnsExceededError,
+  MaxToolTurnsExceededError,
+  ToolExecutionError,
 } from "./types.js";

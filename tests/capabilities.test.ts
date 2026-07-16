@@ -20,6 +20,17 @@ describe("ShapecraftModel.capabilities", () => {
     ["groq", groq({ model: "llama-3.3-70b-versatile" })],
     ["anthropic", anthropic({ model: "claude-haiku-4-5-20251001" })],
     ["ollama", ollama({ model: "llama3.2" })],
+  ])("%s exposes streaming/chat/structuredOutput/toolCalling/skillDispatch true", (_name, model) => {
+    expect(model.capabilities).toEqual({
+      streaming: true,
+      chat: true,
+      structuredOutput: true,
+      toolCalling: true,
+      skillDispatch: true,
+    });
+  });
+
+  it.each([
     ["fireworks", fireworks({ model: "accounts/fireworks/models/llama-v3p1-70b-instruct" })],
     ["mistral", mistral({ model: "mistral-large-latest" })],
     ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
