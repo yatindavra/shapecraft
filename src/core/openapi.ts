@@ -21,18 +21,11 @@ function findOperation(api: Record<string, unknown>, operationId: string): Opera
 }
 
 function extractSchema(op: OperationEntry, target: "requestBody" | "response"): Record<string, unknown> {
-  if (target === "requestBody") {
-    const schema = op.requestBody?.content?.["application/json"]?.schema;
-    if (!schema) {
-      throw new Error(`Operation has no application/json requestBody schema to derive from`);
-    }
-    return schema;
-  }
-
-  const success = op.responses?.["200"] ?? op.responses?.["201"] ?? op.responses?.default;
-  const schema = success?.content?.["application/json"]?.schema;
+  const container =
+    target === "requestBody" ? op.requestBody : (op.responses?.["200"] ?? op.responses?.["201"] ?? op.responses?.default);
+  const schema = container?.content?.["application/json"]?.schema;
   if (!schema) {
-    throw new Error(`Operation has no application/json response schema on a success status to derive from`);
+    throw new Error(`Operation has no application/json ${target} schema to derive from`);
   }
   return schema;
 }
