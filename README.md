@@ -322,6 +322,10 @@ conforming string can still be a wrong answer (see
 | `llamaCpp()` | `constrained` | Token-level GBNF grammar (local `.gguf` via node-llama-cpp) |
 | `anthropic()` | `best-effort` | Prompt + parse + retry |
 | `openRouter()` | `best-effort` | Pass-through to many providers - `response_format` support varies by underlying model |
+| `together()` | `native` | Server-side JSON schema mode |
+| `cerebras()` | `native` | Server-side strict JSON schema mode |
+| `grok()` | `native` | Server-side JSON schema mode |
+| `openaiCompatible()` | `best-effort` (override to `native` if your provider enforces it) | Generic factory - see below |
 
 > `llamaCpp()` is `constrained` for a `{ gbnf }` input (token-level). For other schema
 > types (Zod / jsonSchema / …) it currently runs a best-effort prompt path until the
@@ -343,9 +347,36 @@ conforming string can still be a wrong answer (see
 > migration bridge for OpenAI users, not its primary integration path, and doesn't expose
 > `responseJsonSchema` (plain JSON Schema, what `toJsonSchema()` already produces) —
 > only the older `responseSchema` (Gemini's own Type-enum OpenAPI-subset shape).
+>
+> `together()`/`cerebras()`/`grok()` all reuse the `openai` package pointed at their
+> respective base URLs, same pattern as `fireworks()`/`mistral()`/`openRouter()` - no new
+> SDK dependency. None expose a genuine grammar/constrained-decoding mode, so a `{ gbnf }`
+> input on any of the three is prompt-only best-effort, same as `openai()`/`groq()`.
+
+### `openaiCompatible()`
+
+For any OpenAI-compatible provider shapecraft doesn't name explicitly - `baseURL`,
+`apiKey`, and `model` are all caller-supplied instead of hardcoded per provider:
 
 ```typescript
-import { openai, groq, fireworks, mistral, gemini, openRouter, ollama, anthropic, llamaCpp } from "@aviasole/shapecraft";
+import { openaiCompatible } from "@aviasole/shapecraft";
+
+const custom = openaiCompatible({
+  baseURL: "https://api.some-provider.example/v1",
+  apiKey: process.env.SOME_PROVIDER_API_KEY,
+  model: "some-model-id",
+  guaranteeLevel: "native", // optional - omit to default to "best-effort"
+});
+```
+
+Defaults to `guaranteeLevel: "best-effort"` since shapecraft can't verify an arbitrary
+endpoint actually enforces `json_schema` server-side. Pass `guaranteeLevel: "native"`
+explicitly if you know your provider does, for accurate reporting. Unlike the named
+backends, there's no environment-variable fallback for the API key - there's no single
+conventional env-var name for an arbitrary provider, so `apiKey` is required.
+
+```typescript
+import { openai, groq, fireworks, mistral, gemini, openRouter, ollama, anthropic, llamaCpp, together, cerebras, grok, openaiCompatible } from "@aviasole/shapecraft";
 
 const gpt       = openai({ model: "gpt-4o-mini" });
 const fast      = groq({ model: "llama-3.3-70b-versatile" });
