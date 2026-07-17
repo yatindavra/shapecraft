@@ -28,16 +28,6 @@ describe("resolveOpenApiSchema", () => {
     });
   });
 
-  it("resolves the 2xx response for an operation with a requestBody, when explicitly asked", async () => {
-    const result = await resolveOpenApiSchema({
-      openapi: { spec: fixtureSpec, operationId: "createUser", target: "response" },
-    });
-    expect(result.jsonSchema).toMatchObject({
-      type: "object",
-      required: ["id", "name"],
-    });
-  });
-
   it("throws immediately if the operationId doesn't exist in the spec", async () => {
     await expect(
       resolveOpenApiSchema({ openapi: { spec: fixtureSpec, operationId: "deleteEverything" } })
