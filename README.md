@@ -46,7 +46,7 @@ console.log(result.attempts);       // 1
 
 ## Schema Inputs
 
-Shapecraft accepts five schema types — not just Zod.
+Shapecraft accepts eight schema types — not just Zod.
 
 ### Zod Schema
 
@@ -306,6 +306,59 @@ conforming string can still be a wrong answer (see
   native stack-overflow trace. **If your grammar needs a long repeated sequence, write it
   with `*`/`+`, not recursive rule references** — this is the one place "conventionally
   right-recursive GBNF" needs a caveat.
+
+### YAML
+
+You describe the target shape as a JSON Schema, and the model responds in YAML instead
+of JSON. By default `result.data` is the **parsed object**; add `parse: false` to get the
+raw YAML string back instead.
+
+```typescript
+const result = await generate(model, {
+  yaml: {
+    schema: {
+      type: "object",
+      properties: { name: { type: "string" }, age: { type: "number" } },
+      required: ["name", "age"],
+    },
+  },
+}, "Extract: John Doe, 32 years old.");
+
+console.log(result.data); // { name: "John Doe", age: 32 }
+```
+
+Output is parsed with [`yaml`](https://www.npmjs.com/package/yaml) then validated against
+the schema with the same `checkJsonSchema` logic a `{ jsonSchema }` input uses — a required
+field that's missing or the wrong type retries, same as everywhere else. A model that wraps
+its response in a ` ```yaml ` markdown fence has the fence stripped automatically before
+parsing. `guaranteeLevel` is always `best-effort` — no backend enforces YAML output
+server-side.
+
+### OpenAPI spec
+
+Point at an `operationId` in an existing OpenAPI 3.x spec instead of hand-writing a JSON
+Schema. `spec` can be a file path, a URL, or an already-parsed object.
+
+```typescript
+const result = await generate(model, {
+  openapi: {
+    spec: "./openapi.yaml",
+    operationId: "createUser",
+    // target: "requestBody" is the default - pass target: "response" to
+    // derive from the success response schema instead
+  },
+}, "A user named Jane Doe, age 29, admin role");
+```
+
+The spec is dereferenced and the operation's schema is derived **once, upfront** - from
+that point on it's handled exactly like a `{ jsonSchema }` input, same validation, same
+retry behavior. An `operationId` that doesn't exist in the spec, or an operation with no
+schema on the requested `target`, throws immediately - before the model is ever called,
+same philosophy as a malformed GBNF grammar or an invalid XML template.
+
+> v1 resolves only the default success response (`200`/`201`/`default`) for
+> `target: "response"` and only OpenAPI 3.x specs (not Swagger 2.0) - both are real,
+> deliberate scope cuts, not oversights.
 
 ## Backends & Guarantee Levels
 
