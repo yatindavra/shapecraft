@@ -8,3 +8,7 @@ export { mistral } from "./mistral.js";
 export { openRouter } from "./openRouter.js";
 export { gemini } from "./gemini.js";
 export { deepseek } from "./deepseek.js";
+export { together } from "./together.js";
+export { cerebras } from "./cerebras.js";
+export { grok } from "./grok.js";
+export { openaiCompatible } from "./openaiCompatible.js";
