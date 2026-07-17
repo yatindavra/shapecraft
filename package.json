@@ -89,7 +89,9 @@
     }
   },
   "dependencies": {
+    "@readme/openapi-parser": "^6.3.0",
     "fast-xml-parser": "^5.9.3",
+    "yaml": "^2.9.0",
     "zod-to-json-schema": "^3.23.0"
   }
 }
