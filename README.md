@@ -644,6 +644,30 @@ const result = await generate(model, schema, prompt, {
 | `confidenceScorer` | assigns a 0-1 score to `result.confidence` — see [Staged Validation Pipeline](#staged-validation-pipeline) |
 | `minConfidence` | fails and retries the attempt if `confidenceScorer`'s score is below this |
 | `postProcessors` | array of transforms applied in order to an already-validated value — see [Staged Validation Pipeline](#staged-validation-pipeline) |
+| `retryDelayMs` | delay before each retry — see [Retry Backoff](#retry-backoff) |
+
+## Retry Backoff
+
+Retries fire immediately by default — the same behavior as always. Pass `retryDelayMs` to
+wait between a failed attempt and the next one, useful against rate-limited APIs where an
+instant retry just hits the same limit again.
+
+```typescript
+import { generate, exponentialBackoff } from "@aviasole/shapecraft";
+
+const result = await generate(model, schema, prompt, {
+  maxRetries: 4,
+  retryDelayMs: exponentialBackoff(), // 200ms, 400ms, 800ms, ... jittered, capped at 10s
+});
+```
+
+`retryDelayMs` accepts either a fixed number of ms, or a function `(attempt: number) => number`
+called with the attempt number that just failed. `exponentialBackoff({ baseMs?, factor?, maxMs?, jitter? })`
+is a ready-made strategy — defaults to `baseMs: 200, factor: 2, maxMs: 10_000, jitter: true`.
+Jitter (on by default) randomizes each delay in `[0, computed]` ("full jitter") so concurrent
+callers retrying the same failure don't all retry in lockstep. Never applied after the final
+attempt, and cut short immediately if `signal` aborts mid-wait. Applies to both `generate()`
+and `generateStream()`.
 
 ## Error Handling
 
