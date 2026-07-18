@@ -6,6 +6,7 @@ export { xmlType, validateXmlTemplate } from "./core/xml.js";
 export { parseGbnf, matchesGbnf, buildGbnfSystemPrompt } from "./core/gbnf.js";
 export { createConversationMemory, COMPLETION_SENTINEL } from "./core/turnaround.js";
 export { createClient } from "./core/client.js";
+export { exponentialBackoff } from "./core/retry.js";
 export { composeMiddleware, loggingMiddleware } from "./core/middleware.js";
 export { checkJsonSchema, runValidationPipeline } from "./core/validate.js";
 
@@ -38,6 +39,7 @@ export type {
 } from "./types.js";
 
 export type { CreateClientOptions, ShapecraftClient } from "./core/client.js";
+export type { BackoffOptions } from "./core/retry.js";
 export type { Middleware, MiddlewareContext, NextFn } from "./core/middleware.js";
 export type { ValidationPipelineOptions, ValidationPipelineResult } from "./core/validate.js";
 
