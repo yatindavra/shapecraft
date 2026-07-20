@@ -3,6 +3,7 @@ import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel } from
 import { toJsonSchema, buildStructuredPrompt } from "../core/schema.js";
 import { isZodSchema, isGbnfInput } from "../core/validate.js";
 import { parseAndValidate } from "../core/parse.js";
+import { userContentFor } from "../core/vision.js";
 
 export interface FireworksBackendOptions {
   model?: string;
@@ -67,7 +68,7 @@ export function fireworks(options: FireworksBackendOptions = {}): ShapecraftMode
           model: modelId,
           messages: [
             { role: "system", content: system },
-            { role: "user", content: user },
+            { role: "user", content: userContentFor(user, callOptions?.images) },
           ],
           response_format: responseFormatFor(schema),
         },
@@ -107,7 +108,7 @@ export function fireworks(options: FireworksBackendOptions = {}): ShapecraftMode
           model: modelId,
           messages: [
             { role: "system", content: system },
-            { role: "user", content: user },
+            { role: "user", content: userContentFor(user, callOptions?.images) },
           ],
           response_format: responseFormatFor(schema),
           stream: true,

@@ -2,6 +2,7 @@ import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel } from
 import { buildStructuredPrompt } from "../core/schema.js";
 import { parseAndValidate } from "../core/parse.js";
 import { isXmlInput, isGbnfInput } from "../core/validate.js";
+import { userContentFor } from "../core/vision.js";
 
 function wantsJsonMode(schema: SchemaInput): boolean {
   // XML and GBNF output free-form strings, not JSON - DeepSeek requires the literal
@@ -63,7 +64,7 @@ export function deepseek(options: DeepseekBackendOptions = {}): ShapecraftModel 
           model: modelId,
           messages: [
             { role: "system", content: system },
-            { role: "user", content: user },
+            { role: "user", content: userContentFor(user, callOptions?.images) },
           ],
           ...(wantsJsonMode(schema) ? { response_format: { type: "json_object" } } : {}),
         },
@@ -103,7 +104,7 @@ export function deepseek(options: DeepseekBackendOptions = {}): ShapecraftModel 
           model: modelId,
           messages: [
             { role: "system", content: system },
-            { role: "user", content: user },
+            { role: "user", content: userContentFor(user, callOptions?.images) },
           ],
           ...(wantsJsonMode(schema) ? { response_format: { type: "json_object" } } : {}),
           stream: true,

@@ -2,6 +2,7 @@ import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel } from
 import { buildStructuredPrompt } from "../core/schema.js";
 import { parseAndValidate } from "../core/parse.js";
 import { isXmlInput, isGbnfInput } from "../core/validate.js";
+import { userContentFor } from "../core/vision.js";
 
 function wantsJsonMode(schema: SchemaInput): boolean {
   // XML and GBNF output free-form strings, not JSON — Groq rejects json_object
@@ -41,7 +42,7 @@ export function groq(options: GroqBackendOptions = {}): ShapecraftModel {
           model: modelId,
           messages: [
             { role: "system", content: system },
-            { role: "user", content: user },
+            { role: "user", content: userContentFor(user, callOptions?.images) },
           ],
           // XML and GBNF schemas must not use json_object mode — Groq rejects it when prompt lacks "json"
           ...(wantsJsonMode(schema) ? { response_format: { type: "json_object" } } : {}),
@@ -82,7 +83,7 @@ export function groq(options: GroqBackendOptions = {}): ShapecraftModel {
           model: modelId,
           messages: [
             { role: "system", content: system },
-            { role: "user", content: user },
+            { role: "user", content: userContentFor(user, callOptions?.images) },
           ],
           ...(wantsJsonMode(schema) ? { response_format: { type: "json_object" } } : {}),
           stream: true,

@@ -3,6 +3,7 @@ import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel } from
 import { toJsonSchema, buildStructuredPrompt } from "../core/schema.js";
 import { isZodSchema, isGbnfInput } from "../core/validate.js";
 import { parseAndValidate } from "../core/parse.js";
+import { userContentFor } from "../core/vision.js";
 
 export interface MistralBackendOptions {
   model?: string;
@@ -67,7 +68,7 @@ export function mistral(options: MistralBackendOptions = {}): ShapecraftModel {
           model: modelId,
           messages: [
             { role: "system", content: system },
-            { role: "user", content: user },
+            { role: "user", content: userContentFor(user, callOptions?.images) },
           ],
           response_format: responseFormatFor(schema),
         },
@@ -110,7 +111,7 @@ export function mistral(options: MistralBackendOptions = {}): ShapecraftModel {
           model: modelId,
           messages: [
             { role: "system", content: system },
-            { role: "user", content: user },
+            { role: "user", content: userContentFor(user, callOptions?.images) },
           ],
           response_format: responseFormatFor(schema),
           stream: true,
