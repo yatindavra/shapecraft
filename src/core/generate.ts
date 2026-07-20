@@ -2,6 +2,7 @@ import type {
   ConfidenceScorer,
   GenerateOptions,
   GenerateResult,
+  ModelCallOptions,
   PostProcessor,
   ResultMetadata,
   SchemaInput,
@@ -45,8 +46,17 @@ export async function generate<T>(
   }
 
   const maxRetries = options.maxRetries ?? 3;
-  const { systemPrompt, timeoutMs, signal, jsonSchemaValidator, semanticValidator, confidenceScorer, minConfidence, postProcessors } =
-    options;
+  const {
+    systemPrompt,
+    timeoutMs,
+    signal,
+    jsonSchemaValidator,
+    semanticValidator,
+    confidenceScorer,
+    minConfidence,
+    postProcessors,
+    images,
+  } = options;
   const { provider, model: modelName } = parseProviderModel(model.id);
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -57,10 +67,9 @@ export async function generate<T>(
     const t0 = Date.now();
     const { guard, signal: callSignal, cleanup } = createTimeoutGuard(timeoutMs, signal);
     try {
-      const raw = await Promise.race([
-        model.generate<T>(prompt, schema, systemPrompt, callSignal ? { signal: callSignal } : undefined),
-        guard,
-      ]);
+      const callOptions: ModelCallOptions | undefined =
+        callSignal || images ? { ...(callSignal ? { signal: callSignal } : {}), ...(images ? { images } : {}) } : undefined;
+      const raw = await Promise.race([model.generate<T>(prompt, schema, systemPrompt, callOptions), guard]);
       const { data, confidence } = await runValidationPipeline<T>(raw, schema, prompt, {
         jsonSchemaValidator,
         semanticValidator: semanticValidator as SemanticValidator<T> | undefined,

@@ -42,6 +42,14 @@ export type XmlInput = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type SchemaInput<T = unknown> = z.ZodType<T> | JsonSchemaInput | PatternInput | ValidatorInput | XmlInput | GbnfInput;
 
+/**
+ * Image input content for vision-capable models — orthogonal to `SchemaInput` (which
+ * describes the desired *output* shape). `data` is base64-encoded, no `data:` URI
+ * prefix. Not every backend accepts both forms — see each backend's own handling
+ * (some are base64-only and throw on `{ url }`).
+ */
+export type ImageContent = { data: string; mimeType: string } | { url: string };
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -58,6 +66,8 @@ export interface ChatMessage {
  */
 export interface ModelCallOptions {
   signal?: AbortSignal;
+  /** See `GenerateOptions.images`. */
+  images?: ImageContent[];
 }
 
 /**
@@ -176,6 +186,13 @@ export interface GenerateOptions {
   minConfidence?: number;
   /** Optional final stage — see `PostProcessor`. Runs in array order. */
   postProcessors?: PostProcessor<unknown>[];
+  /**
+   * Images to attach alongside the text prompt, for vision-capable models. Orthogonal
+   * to `schema` — the schema still describes the output shape, this is extra input
+   * content. A backend without vision support ignores or rejects it; see each
+   * backend's own docs for which forms (`{ data, mimeType }` vs `{ url }`) it accepts.
+   */
+  images?: ImageContent[];
 }
 
 /** Best-effort call metadata — always present, but only `provider`/`model`/

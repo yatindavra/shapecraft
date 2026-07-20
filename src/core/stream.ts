@@ -1,4 +1,4 @@
-import type { GenerateOptions, GenerateResult, ResultMetadata, SchemaInput, ShapecraftModel, StreamHandle } from "../types.js";
+import type { GenerateOptions, GenerateResult, ModelCallOptions, ResultMetadata, SchemaInput, ShapecraftModel, StreamHandle } from "../types.js";
 import { MaxRetriesExceededError, SchemaViolationError } from "../types.js";
 import { generate, parseProviderModel } from "./generate.js";
 import { parseAndValidate } from "./parse.js";
@@ -26,7 +26,7 @@ export function generateStream<T>(
   options: GenerateOptions = {}
 ): StreamHandle<T> {
   const maxRetries = options.maxRetries ?? 3;
-  const { systemPrompt, timeoutMs, signal, jsonSchemaValidator } = options;
+  const { systemPrompt, timeoutMs, signal, jsonSchemaValidator, images } = options;
   const { provider, model: modelName } = parseProviderModel(model.id);
 
   const emitter = new StreamEmitter<T>();
@@ -70,12 +70,9 @@ export function generateStream<T>(
       let earlyFailure: SchemaViolationError | null = null;
 
       const { guard, signal: callSignal, cleanup } = createTimeoutGuard(timeoutMs, signal);
-      const source = model.generateStream<T>(
-        prompt,
-        schema,
-        systemPrompt,
-        callSignal ? { signal: callSignal } : undefined
-      );
+      const callOptions: ModelCallOptions | undefined =
+        callSignal || images ? { ...(callSignal ? { signal: callSignal } : {}), ...(images ? { images } : {}) } : undefined;
+      const source = model.generateStream<T>(prompt, schema, systemPrompt, callOptions);
 
       try {
         for await (const delta of tokenize(source, guard)) {
