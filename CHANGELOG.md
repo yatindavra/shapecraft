@@ -1,5 +1,36 @@
 # Changelog
 
+## [2.6.0] - 2026-07-20
+
+### Added
+
+- **Image input** - `GenerateOptions.images?: ImageContent[]` attaches images alongside
+  the text prompt for vision-capable models. Orthogonal to `schema` - the schema still
+  describes the output shape, images are extra input content, the same category of
+  thing `systemPrompt` is. `ImageContent` is `{ data, mimeType }` (base64) or `{ url }`.
+  - Real wiring on 9 of 10 backends: `openai()`/`groq()`/`fireworks()`/`mistral()`/
+    `openRouter()`/`deepseek()` share one `imageContentBlocks`-style helper (all six
+    reach their API via the `openai` package with the same `image_url` content-block
+    shape); `anthropic()` builds its own `image`/`source` content block (base64 or a
+    real URL - Claude fetches URL images server-side); `gemini()` builds its own
+    `contents`/`inlineData` shape (base64 only); `ollama()` adds a base64-only `images`
+    array on the message.
+  - `gemini()` and `ollama()` throw a clear error on a URL-form image - neither API has
+    a URL-fetch source type, so the caller must fetch and base64-encode it themselves.
+  - `llamaCpp()` throws a clear error if `images` is passed at all (before loading the
+    model) - real vision support there needs a multimodal GGUF + a separate mmproj
+    projector file, a meaningfully different config, deferred past v1.
+  - No new `ModelCapabilities.vision` flag - vision support is model-ID-specific, not
+    backend-wide (a `groq()` instance on a non-vision model can't take images no matter
+    what a blanket flag claimed), so the provider's own rejection is the honest error
+    surface instead.
+  - Works with both `generate()` and `generateStream()` - the image is attached once
+    per attempt, the text response still streams token-by-token as usual.
+  - Live-verified against real `anthropic()` (URL form) and `gemini()` (base64 form)
+    calls against a real receipt image - both correctly read every field from the
+    image; the OpenAI-compatible group and `ollama()`/`llamaCpp()` are covered by
+    mocked-SDK tests only, not yet live-verified (see `PR-ROLLOUT.md`).
+
 ## [2.5.0] - 2026-07-15
 
 ### Added

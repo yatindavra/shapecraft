@@ -756,6 +756,46 @@ try {
 
 A handler that throws — including the terminal skill's own handler — doesn't abort the loop. It's recorded as an error turn and fed back to the model, which can adapt (different arguments, a different skill, or try again) on the next turn. The loop only ever exits early via a thrown `MaxSkillTurnsExceededError`; a successful terminal-skill call is the only path to `{ status: "complete" }`.
 
+## Image Input
+
+Attach an image alongside the text prompt for vision-capable models — extraction stays schema-driven, the image is just extra input content the model looks at while producing the output:
+
+```typescript
+import { generate, openai, anthropic } from "@aviasole/shapecraft";
+import { readFileSync } from "node:fs";
+
+const receiptSchema = z.object({
+  vendor: z.string(),
+  total: z.number(),
+  lineItems: z.array(z.object({ description: z.string(), price: z.number() })),
+});
+
+// base64 form - you have a file/buffer
+const photo = readFileSync("./receipt.jpg").toString("base64");
+const result = await generate(openai({ model: "gpt-4o-mini" }), receiptSchema, "Extract this receipt", {
+  images: [{ data: photo, mimeType: "image/jpeg" }],
+});
+
+// URL form - the backend fetches it (openai/groq/fireworks/mistral/openRouter/deepseek/anthropic only)
+const fromUrl = await generate(anthropic(), receiptSchema, "Extract this receipt", {
+  images: [{ url: "https://example.com/receipt.jpg" }],
+});
+```
+
+`images` also works with `generateStream()` — the image is attached once per attempt, the text response still streams token-by-token as usual.
+
+**Per-backend support:**
+
+| Backend | Base64 | URL |
+|---|---|---|
+| `openai()`, `groq()`, `fireworks()`, `mistral()`, `openRouter()`, `deepseek()` | ✅ | ✅ (backend fetches it) |
+| `anthropic()` | ✅ | ✅ (Claude fetches it server-side) |
+| `gemini()` | ✅ | ❌ throws — no URL-fetch source type, fetch and encode yourself first |
+| `ollama()` | ✅ | ❌ throws — same reason as `gemini()` |
+| `llamaCpp()` | ❌ throws | ❌ throws — real vision support needs a multimodal GGUF + a separate mmproj projector file, deferred past v1 |
+
+There's no `capabilities.vision` flag — vision support is model-ID-specific, not backend-wide (a `groq()` instance on a non-vision model can't take images no matter what a blanket flag claimed). The provider's own rejection is the honest error surface for that case; the table above only covers each backend's *transport* support (does it know how to send an image at all).
+
 ## What shapecraft guarantees — and what it doesn't
 
 Every mechanism above (`native`, `constrained`, `best-effort` + retry) targets one thing: **the output is structurally valid** — it parses, the types match, required fields are present and non-empty. That's a real, load-bearing guarantee: it's the difference between code that can trust `result.data.age` is a `number` versus code that has to defensively re-check everything the model says.
