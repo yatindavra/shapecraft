@@ -1,8 +1,31 @@
 import { z } from "zod";
-import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel } from "../types.js";
+import type { ChatMessage, ImageContent, ModelCallOptions, SchemaInput, ShapecraftModel } from "../types.js";
 import { toJsonSchema, buildStructuredPrompt } from "../core/schema.js";
 import { isZodSchema, isGbnfInput } from "../core/validate.js";
 import { parseAndValidate } from "../core/parse.js";
+
+/**
+ * Gemini's `contents` shape is a plain string with no images, or an array of
+ * `{ role, parts }` turns once one is attached - a different shape from every other
+ * backend, not the OpenAI-compatible `image_url` form. `inlineData` is base64-only
+ * (like Ollama) - Gemini's API has no URL-fetch source type, so a `{ url }` image
+ * throws rather than being silently dropped.
+ */
+function contentsFor(text: string, images?: ImageContent[]): string | Record<string, unknown>[] {
+  if (!images || images.length === 0) return text;
+
+  const parts: Record<string, unknown>[] = [{ text }];
+  for (const img of images) {
+    if ("url" in img) {
+      throw new Error(
+        "gemini() only accepts base64 images ({ data, mimeType }) - Gemini's API has no URL-fetch source type. Fetch and base64-encode the image yourself first."
+      );
+    }
+    parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+  }
+
+  return [{ role: "user", parts }];
+}
 
 export interface GeminiBackendOptions {
   model?: string;
@@ -73,7 +96,7 @@ export function gemini(options: GeminiBackendOptions = {}): ShapecraftModel {
 
       const response = await ai.models.generateContent({
         model: modelId,
-        contents: user,
+        contents: contentsFor(user, callOptions?.images),
         config: {
           systemInstruction: system,
           ...responseConfigFor(schema),
@@ -117,7 +140,7 @@ export function gemini(options: GeminiBackendOptions = {}): ShapecraftModel {
 
       const stream = await ai.models.generateContentStream({
         model: modelId,
-        contents: user,
+        contents: contentsFor(user, callOptions?.images),
         config: {
           systemInstruction: system,
           ...responseConfigFor(schema),
