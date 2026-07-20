@@ -1,10 +1,29 @@
-import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel } from "../types.js";
+import type { ChatMessage, ImageContent, ModelCallOptions, SchemaInput, ShapecraftModel } from "../types.js";
 import { buildStructuredPrompt } from "../core/schema.js";
 import { parseAndValidate } from "../core/parse.js";
 
 export interface AnthropicBackendOptions {
   model?: string;
   apiKey?: string;
+}
+
+/**
+ * Anthropic's own content-block shape - distinct from the OpenAI-compatible
+ * `image_url` form the Group-A backends share. `source.type` is `"url"` for a real
+ * URL (Claude's API fetches it server-side, no client-side fetch needed) or
+ * `"base64"` for inline data.
+ */
+function userContentFor(text: string, images?: ImageContent[]): string | Record<string, unknown>[] {
+  if (!images || images.length === 0) return text;
+
+  return [
+    { type: "text", text },
+    ...images.map((img) =>
+      "url" in img
+        ? { type: "image", source: { type: "url", url: img.url } }
+        : { type: "image", source: { type: "base64", media_type: img.mimeType, data: img.data } }
+    ),
+  ];
 }
 
 export function anthropic(options: AnthropicBackendOptions = {}): ShapecraftModel {
@@ -34,7 +53,7 @@ export function anthropic(options: AnthropicBackendOptions = {}): ShapecraftMode
           model: modelId,
           max_tokens: 4096,
           system,
-          messages: [{ role: "user", content: user }],
+          messages: [{ role: "user", content: userContentFor(user, callOptions?.images) }],
         },
         callOptions?.signal ? { signal: callOptions.signal } : undefined
       );
@@ -72,7 +91,7 @@ export function anthropic(options: AnthropicBackendOptions = {}): ShapecraftMode
           model: modelId,
           max_tokens: 4096,
           system,
-          messages: [{ role: "user", content: user }],
+          messages: [{ role: "user", content: userContentFor(user, callOptions?.images) }],
         },
         callOptions?.signal ? { signal: callOptions.signal } : undefined
       );
