@@ -1,4 +1,4 @@
-import type { ChatMessage, SchemaInput, ShapecraftModel } from "../types.js";
+import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel } from "../types.js";
 import { buildStructuredPrompt } from "../core/schema.js";
 import { parseAndValidate } from "../core/parse.js";
 import { isGbnfInput } from "../core/validate.js";
@@ -49,7 +49,15 @@ export function llamaCpp(options: LlamaCppBackendOptions): ShapecraftModel {
     id: `llamacpp:${options.modelPath}`,
     guaranteeLevel: "constrained",
 
-    async generate<T>(prompt: string, schema: SchemaInput<T>, systemPrompt?: string): Promise<T> {
+    async generate<T>(prompt: string, schema: SchemaInput<T>, systemPrompt?: string, callOptions?: ModelCallOptions): Promise<T> {
+      // Vision not supported in v1 — real support needs a multimodal GGUF + a
+      // separate mmproj (projector) file, a meaningfully different config from
+      // today's single modelPath. Loud rejection instead of silently ignoring
+      // the image, since a silently-dropped image is worse than a clear error.
+      if (callOptions?.images && callOptions.images.length > 0) {
+        throw new Error("llamaCpp() does not support image input in v1 - use openai()/anthropic()/gemini()/etc. for vision instead.");
+      }
+
       // Fail fast on a malformed grammar before loading a multi-GB model.
       if (isGbnfInput(schema)) parseGbnf(schema.gbnf);
 

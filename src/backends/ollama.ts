@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel } from "../types.js";
+import type { ChatMessage, ImageContent, ModelCallOptions, SchemaInput, ShapecraftModel } from "../types.js";
 import { toJsonSchema, buildStructuredPrompt } from "../core/schema.js";
 import { isZodSchema } from "../core/validate.js";
 import { parseAndValidate } from "../core/parse.js";
@@ -9,6 +9,28 @@ export interface OllamaBackendOptions {
   model: string;
   host?: string;
   timeoutMs?: number;
+}
+
+/**
+ * Ollama's `images` is a sibling field on the message, not a content-block array,
+ * and base64-only - Ollama's API has no URL-fetch source type, so a `{ url }` image
+ * throws rather than being silently dropped.
+ */
+function userMessageFor(content: string, images?: ImageContent[]): { role: "user"; content: string; images?: string[] } {
+  if (!images || images.length === 0) return { role: "user", content };
+
+  return {
+    role: "user",
+    content,
+    images: images.map((img) => {
+      if ("url" in img) {
+        throw new Error(
+          "ollama() only accepts base64 images ({ data, mimeType }) - Ollama's API has no URL-fetch source type. Fetch and base64-encode the image yourself first."
+        );
+      }
+      return img.data;
+    }),
+  };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -45,7 +67,7 @@ export function ollama(options: OllamaBackendOptions): ShapecraftModel {
           model: options.model,
           messages: [
             { role: "system", content: system },
-            { role: "user", content: user },
+            userMessageFor(user, callOptions?.images),
           ],
           ...(format ? { format } : {}),
           stream: false,
@@ -102,7 +124,7 @@ export function ollama(options: OllamaBackendOptions): ShapecraftModel {
           model: options.model,
           messages: [
             { role: "system", content: system },
-            { role: "user", content: user },
+            userMessageFor(user, callOptions?.images),
           ],
           ...(format ? { format } : {}),
           stream: true,
