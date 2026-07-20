@@ -17,6 +17,7 @@ export type {
   ModelCallOptions,
   ModelCapabilities,
   SchemaInput,
+  ImageContent,
   GenerateOptions,
   GenerateResult,
   ResultMetadata,
