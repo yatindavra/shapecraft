@@ -1,5 +1,55 @@
 # Changelog
 
+## [2.6.0] - 2026-07-15
+
+### Added
+
+- **CLI** - `npx shapecraft validate --schema schema.json --output output.json` validates
+  an already-produced JSON file against a raw JSON Schema file without writing any code.
+  Reuses `checkJsonSchema` (the same structural check `generate()` uses internally) -
+  `required` fields must be present and non-empty, `type`/`enum` must match, nested
+  `properties`/`items` are checked recursively. Exits `0` and prints `✓ ... matches ...`
+  on success; exits `1` with the specific violation on failure. New `bin` entry
+  (`src/cli.ts`, built alongside the existing `index`/`fhir` entrypoints) - no new
+  dependency, no argument-parsing library.
+
+## [2.5.0] - 2026-07-15
+
+### Added
+
+- **`fireworks()` backend** - Fireworks AI, reached via the `openai` package pointed at
+  Fireworks' base URL (no new SDK dependency). `guaranteeLevel: "native"` - JSON/Zod
+  schemas use Fireworks' server-side JSON schema mode, same tier as `openai()`/`groq()`.
+  - The differentiator: a `{ gbnf }` input gets Fireworks' own grammar mode
+    (`response_format: { type: "grammar", grammar }`), a genuine token-level constraint
+    applied server-side - not the prompted-and-checked best-effort path every other cloud
+    backend falls back to for gbnf. It's the same real guarantee `llamaCpp()` gives
+    locally, just without needing a local `.gguf` file.
+- **`mistral()` backend** - Mistral AI, same `openai`-package-pointed-at-a-different-base-URL
+  approach as `fireworks()`. `guaranteeLevel: "native"` - `response_format: { type:
+  "json_schema", ... }` is server-side enforced, same tier as `openai()`/`groq()`/
+  `fireworks()`. No grammar mode - a `{ gbnf }` input is prompt-only, best-effort, same
+  as `openai()`/`groq()`.
+- **`openRouter()` backend** - same `openai`-package-pointed-at-a-different-base-URL
+  approach as `fireworks()`/`mistral()`. `guaranteeLevel: "best-effort"`, deliberately
+  not `"native"` like the other cloud backends - OpenRouter is pass-through across many
+  different underlying providers/models, and `response_format: { type: "json_schema" }`
+  enforcement isn't guaranteed for every model it can route to. Defensively requests
+  `extractJson: true` on every call for the same reason `anthropic()` needs it. No
+  grammar mode - a `{ gbnf }` input is prompt-only, best-effort.
+
+### Fixed
+
+- **`toJsonSchema()` emitted the legacy OpenAPI 3.0 boolean form for exclusive bounds**
+  (`.positive()`/`.negative()`/`.gt()`/`.lt()`) - `exclusiveMinimum: true` + a separate
+  `minimum`, instead of the numeric form real JSON Schema requires (`exclusiveMinimum: 0`).
+  Backends that validate the schema itself strictly (confirmed on Mistral, which rejected
+  it outright with a 422) reject the boolean form before the model ever runs. Switched
+  `zodToJsonSchema`'s target from `openApi3` to `jsonSchema7` (stripping the extraneous
+  `$schema` key it adds). Affects every backend's Zod-schema handling, not just Mistral -
+  verified live against `groq()`, `anthropic()`, and `ollama()` with the schema that broke
+  Mistral.
+
 ## [2.4.0] - 2026-07-17
 
 ### Added

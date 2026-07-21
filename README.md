@@ -313,22 +313,39 @@ conforming string can still be a wrong answer (see
 |---|---|---|
 | `openai()` | `native` | Server-side strict JSON schema |
 | `groq()` | `native` | JSON mode |
+| `fireworks()` | `native` | Server-side JSON schema mode, plus a real token-level GBNF grammar mode |
+| `mistral()` | `native` | Server-side JSON schema mode |
 | `ollama()` | `constrained` | Token-level JSON-schema constraint |
 | `llamaCpp()` | `constrained` | Token-level GBNF grammar (local `.gguf` via node-llama-cpp) |
 | `anthropic()` | `best-effort` | Prompt + parse + retry |
+| `openRouter()` | `best-effort` | Pass-through to many providers - `response_format` support varies by underlying model |
 
 > `llamaCpp()` is `constrained` for a `{ gbnf }` input (token-level). For other schema
 > types (Zod / jsonSchema / …) it currently runs a best-effort prompt path until the
 > JSON-Schema→GBNF converter lands — treat those as best-effort despite the nominal level.
+>
+> `fireworks()` is the one cloud backend where a `{ gbnf }` input is *not* downgraded to
+> best-effort — Fireworks' grammar mode (`response_format: { type: "grammar", grammar }`)
+> applies the GBNF grammar as a genuine token-level constraint server-side, the same
+> guarantee `llamaCpp()` gives locally. It reuses the `openai` package pointed at
+> Fireworks' base URL, so no extra SDK dependency is needed.
+>
+> `openRouter()` is deliberately `best-effort`, not `native` like the other cloud
+> backends — it's pass-through across many different underlying providers/models, and
+> `response_format: { type: "json_schema" }` enforcement isn't guaranteed for every model
+> it can route to, only the ones that actually support it themselves.
 
 ```typescript
-import { openai, groq, ollama, anthropic, llamaCpp } from "@aviasole/shapecraft";
+import { openai, groq, fireworks, mistral, openRouter, ollama, anthropic, llamaCpp } from "@aviasole/shapecraft";
 
-const gpt    = openai({ model: "gpt-4o-mini" });
-const fast   = groq({ model: "llama-3.3-70b-versatile" });
-const local  = ollama({ model: "llama3.2" });
-const native = llamaCpp({ modelPath: "./models/llama-3.2-3b.gguf" });
-const claude = anthropic({ model: "claude-haiku-4-5-20251001", maxRetries: 3 });
+const gpt       = openai({ model: "gpt-4o-mini" });
+const fast      = groq({ model: "llama-3.3-70b-versatile" });
+const cloudGbnf = fireworks({ model: "accounts/fireworks/models/llama-v3p1-70b-instruct" });
+const mist      = mistral({ model: "mistral-large-latest" });
+const router    = openRouter({ model: "openai/gpt-4o-mini" });
+const local     = ollama({ model: "llama3.2" });
+const native    = llamaCpp({ modelPath: "./models/llama-3.2-3b.gguf" });
+const claude    = anthropic({ model: "claude-haiku-4-5-20251001", maxRetries: 3 });
 ```
 
 ### Model Capabilities
@@ -668,6 +685,76 @@ try {
 ```
 
 A handler that throws — including the terminal skill's own handler — doesn't abort the loop. It's recorded as an error turn and fed back to the model, which can adapt (different arguments, a different skill, or try again) on the next turn. The loop only ever exits early via a thrown `MaxSkillTurnsExceededError`; a successful terminal-skill call is the only path to `{ status: "complete" }`.
+
+## Skill-Based Generation
+
+Let the model pick which of several typed operations to run, with validated arguments — instead of always extracting one fixed shape. Register a set of skills (name, Zod input schema, handler function), and `generateSkillCall()` dispatches to the right one:
+
+```typescript
+import { z } from "zod";
+import { SkillRegistry, generateSkillCall, runSkill } from "@aviasole/shapecraft";
+
+const registry = new SkillRegistry();
+
+registry.register({
+  name: "lookupOrder",
+  description: "Look up an order's status by its order ID",
+  inputSchema: z.object({ orderId: z.string() }),
+  handler: async ({ orderId }) => db.orders.findById(orderId),
+});
+
+registry.register({
+  name: "sendRefund",
+  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
+  handler: async ({ orderId, amount }) => paymentsApi.refund(orderId, amount),
+});
+
+const call = await generateSkillCall(model, registry, "What's the status of order #4521?");
+// { skill: "lookupOrder", args: { orderId: "4521" } }
+
+const result = await runSkill(registry, call);
+```
+
+`generateSkillCall()` is a thin wrapper around `generate()` — it builds a `z.discriminatedUnion` over every registered skill's `inputSchema` and dispatches through the same retry loop, so `guaranteeLevel` semantics (native/constrained/best-effort) apply per backend exactly like any other call. This is deliberately **not** built on OpenAI/Anthropic's native tool-calling APIs — those don't exist on Ollama or `llamaCpp()` at all, so schema-based dispatch is what makes tool use work identically across every backend, local models included.
+
+v1 skill schemas are **Zod only** — that's the mechanism that makes the discriminated-union dispatch work with zero new validation code.
+
+### Looping toward a goal
+
+`runSkillLoop()` repeatedly picks and runs a skill, feeding each result back as context, until a skill marked `terminal: true` succeeds or `maxTurns` is hit:
+
+```typescript
+import { runSkillLoop, MaxSkillTurnsExceededError } from "@aviasole/shapecraft";
+
+registry.register({
+  name: "sendRefund",
+  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
+  handler: async ({ orderId, amount }) => paymentsApi.refund(orderId, amount),
+  terminal: true, // running this successfully ends the loop
+});
+
+try {
+  const { result, memory } = await runSkillLoop(model, registry, "Refund order #4521");
+  console.log(result); // whatever the terminal skill's handler returned
+} catch (err) {
+  if (err instanceof MaxSkillTurnsExceededError) {
+    // err.memory is JSON-serializable — persist it and call runSkillLoop() again
+    // with a fresh maxTurns budget (and { memory: err.memory }) to continue.
+  }
+}
+```
+
+A handler that throws — including the terminal skill's own handler — doesn't abort the loop. It's recorded as an error turn and fed back to the model, which can adapt (different arguments, a different skill, or try again) on the next turn. The loop only ever exits early via a thrown `MaxSkillTurnsExceededError`; a successful terminal-skill call is the only path to `{ status: "complete" }`.
+
+## CLI
+
+Validate an already-produced JSON file against a raw JSON Schema file, without writing any code:
+
+```bash
+npx shapecraft validate --schema schema.json --output output.json
+```
+
+`schema.json` is a raw JSON Schema (the same shape as the `{ jsonSchema }` `SchemaInput`), `output.json` is the data to check against it. Runs the same `checkJsonSchema` structural check `generate()` uses internally — `required` fields must be present and non-empty, `type`/`enum` must match, nested `properties`/`items` are checked recursively. Exits `0` and prints `✓ ... matches ...` on success; exits `1` and prints the specific violation (e.g. `Missing required property: "age"`) on failure. Useful in CI to check a fixture or a recorded model output against a schema without spinning up a full `generate()` call.
 
 ## What shapecraft guarantees — and what it doesn't
 
