@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.5.0] - 2026-07-15
+## [2.6.0] - 2026-07-15
 
 ### Added
 
@@ -13,7 +13,7 @@
   (`src/cli.ts`, built alongside the existing `index`/`fhir` entrypoints) - no new
   dependency, no argument-parsing library.
 
-## [2.4.0] - 2026-07-15
+## [2.5.0] - 2026-07-15
 
 ### Added
 
@@ -37,6 +37,25 @@
   enforcement isn't guaranteed for every model it can route to. Defensively requests
   `extractJson: true` on every call for the same reason `anthropic()` needs it. No
   grammar mode - a `{ gbnf }` input is prompt-only, best-effort.
+- **`gemini()` backend** - Google Gemini, via the official `@google/genai` SDK rather
+  than `openai`-pointed-at-a-different-base-URL - Gemini's OpenAI-compatible endpoint is
+  a migration bridge for OpenAI users, not its primary integration path, and doesn't
+  expose `responseJsonSchema` (plain JSON Schema, what `toJsonSchema()` already produces)
+  - only the older `responseSchema` (Gemini's own Type-enum OpenAPI-subset shape).
+  `guaranteeLevel: "native"` - `responseJsonSchema`/`responseMimeType: "application/json"`
+  is server-side constrained decoding, same tier as `openai()`/`groq()`/`fireworks()`/
+  `mistral()`. No grammar mode - a `{ gbnf }` input is prompt-only, best-effort, same as
+  every other backend without one.
+- **`deepseek()` backend** - DeepSeek, reached via the `openai` package pointed at DeepSeek's
+  base URL (no new SDK dependency, same approach as `fireworks()`/`mistral()`/`openRouter()`).
+  `guaranteeLevel: "native"` - `response_format: { type: "json_object" }` is a real,
+  server-side JSON-mode toggle, same tier as `groq()` - but unlike `fireworks()`/`mistral()`,
+  DeepSeek's API only supports `"json_object"` (valid JSON), not a schema-strict
+  `"json_schema"` mode. Requires the literal word "json" in the prompt for `json_object`
+  mode to behave, same restriction as `groq()`. No grammar mode - a `{ gbnf }` input is
+  prompt-only, best-effort, same as every other backend without one. Defaults to
+  `deepseek-v4-flash` - `deepseek-chat`/`deepseek-reasoner` are deprecated 2026-07-24 in
+  favor of `deepseek-v4-flash` (non-thinking) / `deepseek-v4-pro` (thinking).
 
 ### Fixed
 
@@ -50,7 +69,7 @@
   verified live against `groq()`, `anthropic()`, and `ollama()` with the schema that broke
   Mistral.
 
-## [2.3.0] - 2026-07-15
+## [2.4.0] - 2026-07-17
 
 ### Added
 
@@ -78,6 +97,17 @@
   - New `ModelCapabilities.skillDispatch: boolean`, `true` on all 4 built-in backends.
     `toolCalling` is untouched - it keeps meaning native provider function-calling, a
     different, still-unbuilt thing.
+
+## [2.3.0] - 2026-07-16
+
+### Added
+
+- **FHIR `Extension` support** - every R4 preset (`Patient`, `Observation`, `Condition`,
+  `MedicationRequest`, `Encounter`) now accepts an optional `extension?: Extension[]`. Common-
+  subset `Extension` type covers `url` plus `valueString`/`valueInteger`/`valueBoolean`/
+  `valueCodeableConcept` - real FHIR's `value[x]` has ~20 polymorphic variants; unsupported
+  ones pass through unvalidated (no `oneOf` support in `checkJsonSchema`) rather than being
+  rejected.
 
 ## [2.2.0] - 2026-07-10
 
