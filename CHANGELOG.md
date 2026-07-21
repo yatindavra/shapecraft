@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.7.0] - 2026-07-21
+
+### Added
+
+- **CLI** - `shapecraft validate` gains an `--explain` flag. On a violation, prints the raw
+  model output (the `output.json` contents, pretty-printed) alongside the existing mismatch
+  message, so the actual response can be inspected without re-opening the file separately.
+
 ## [2.6.0] - 2026-07-15
 
 ### Added

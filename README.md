@@ -828,6 +828,23 @@ npx shapecraft validate --schema schema.json --output output.json
 
 `schema.json` is a raw JSON Schema (the same shape as the `{ jsonSchema }` `SchemaInput`), `output.json` is the data to check against it. Runs the same `checkJsonSchema` structural check `generate()` uses internally — `required` fields must be present and non-empty, `type`/`enum` must match, nested `properties`/`items` are checked recursively. Exits `0` and prints `✓ ... matches ...` on success; exits `1` and prints the specific violation (e.g. `Missing required property: "age"`) on failure. Useful in CI to check a fixture or a recorded model output against a schema without spinning up a full `generate()` call.
 
+Add `--explain` to print the raw output alongside the violation, so you can see exactly what the model produced without re-opening `output.json`:
+
+```bash
+npx shapecraft validate --schema schema.json --output output.json --explain
+```
+
+```text
+✗ output.json does not match schema.json
+Missing required property: "total"
+
+Raw model output:
+{
+  "vendor": "Green Grocer",
+  "items": ["2 apples", "1 loaf of bread"]
+}
+```
+
 ## What shapecraft guarantees — and what it doesn't
 
 Every mechanism above (`native`, `constrained`, `best-effort` + retry) targets one thing: **the output is structurally valid** — it parses, the types match, required fields are present and non-empty. That's a real, load-bearing guarantee: it's the difference between code that can trust `result.data.age` is a `number` versus code that has to defensively re-check everything the model says.
