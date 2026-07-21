@@ -201,6 +201,29 @@ describe("CLI - shapecraft validate", () => {
     expect(stderr).toContain('Missing required property: "name"');
   }, 20_000);
 
+  it("--explain prints the raw model output alongside the violation", () => {
+    const schemaPath = join(dir, "schema.json");
+    const outputPath = join(dir, "output.json");
+    writeFileSync(schemaPath, JSON.stringify(PersonSchema));
+    writeFileSync(outputPath, JSON.stringify({ name: "Jane Doe" }));
+
+    const { status, stderr } = runCli(["validate", "--schema", schemaPath, "--output", outputPath, "--explain"]);
+    expect(status).toBe(1);
+    expect(stderr).toContain('Missing required property: "age"');
+    expect(stderr).toContain("Raw model output:");
+    expect(stderr).toContain('"name": "Jane Doe"');
+  }, 20_000);
+
+  it("without --explain, does not print the raw model output", () => {
+    const schemaPath = join(dir, "schema.json");
+    const outputPath = join(dir, "output.json");
+    writeFileSync(schemaPath, JSON.stringify(PersonSchema));
+    writeFileSync(outputPath, JSON.stringify({ name: "Jane Doe" }));
+
+    const { stderr } = runCli(["validate", "--schema", schemaPath, "--output", outputPath]);
+    expect(stderr).not.toContain("Raw model output:");
+  }, 20_000);
+
   it("passes validation for a valid array of nested objects", () => {
     const schemaPath = join(dir, "schema.json");
     const outputPath = join(dir, "output.json");
