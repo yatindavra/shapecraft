@@ -845,6 +845,32 @@ Raw model output:
 }
 ```
 
+## Testing toolkit
+
+`@aviasole/shapecraft/testing` provides `mockModel()` and `mockModelThatFails()` — `ShapecraftModel` test doubles for testing your own code (retry handling, error branches, turnaround loops) without calling a real provider:
+
+```typescript
+import { generate } from "@aviasole/shapecraft";
+import { mockModel } from "@aviasole/shapecraft/testing";
+
+const model = mockModel({ name: "Alice", age: 30 });
+const { data } = await generate(model, PersonSchema, "extract data");
+```
+
+Pass an array instead of a single value to return a different response per call, held at the last entry once the array is exhausted — the shape needed for "fail twice, then succeed" retry tests. Any array entry that's an `Error` instance (e.g. `SchemaViolationError`) is thrown instead of returned, so you can exercise `generate()`'s retry loop for real:
+
+```typescript
+import { generate } from "@aviasole/shapecraft";
+import { SchemaViolationError } from "@aviasole/shapecraft";
+import { mockModel } from "@aviasole/shapecraft/testing";
+
+const model = mockModel([new SchemaViolationError("bad", "missing age"), { name: "Alice", age: 30 }]);
+const result = await generate(model, PersonSchema, "extract data", { maxRetries: 2 });
+// result.attempts === 2 — first attempt failed, second succeeded
+```
+
+`mockModelThatFails()` is a shorthand for a mock that always throws `SchemaViolationError`, for testing `MaxRetriesExceededError` exhaustion. Both support `generateStream()` (yields the JSON-stringified response as a single chunk) and an optional `chat` callback (for `turnaround: true` code paths) via a second `options` argument (`id`, `guaranteeLevel`, `capabilities`, `chat`).
+
 ## What shapecraft guarantees — and what it doesn't
 
 Every mechanism above (`native`, `constrained`, `best-effort` + retry) targets one thing: **the output is structurally valid** — it parses, the types match, required fields are present and non-empty. That's a real, load-bearing guarantee: it's the difference between code that can trust `result.data.age` is a `number` versus code that has to defensively re-check everything the model says.

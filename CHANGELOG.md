@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.8.0] - 2026-07-21
+
+### Added
+
+- **Testing toolkit** - new `@aviasole/shapecraft/testing` entrypoint with `mockModel()` and
+  `mockModelThatFails()`, publicly exported `ShapecraftModel` test doubles for testing code
+  built on shapecraft (retry handling, error branches, turnaround loops) without calling a
+  real provider. `mockModel()` accepts a single value (returned every call) or an array
+  consumed one per call and held at the last entry once exhausted - array entries that are
+  `Error` instances (e.g. `SchemaViolationError`) are thrown instead of returned, for
+  exercising the real retry loop. Supports `generateStream()` and an optional `chat` callback.
+
+### Fixed
+
+- **Build** - `tsup.config.ts` switched from `splitting: false` to `splitting: true`. With
+  multiple entrypoints (`index`/`fhir`/`cli`/`testing`) and splitting disabled, each bundle
+  got its own separate copy of shared internal classes (`SchemaViolationError` etc.) -
+  `instanceof` checks silently failed across entrypoints (e.g. a `SchemaViolationError`
+  thrown by a `@aviasole/shapecraft/testing` mock wasn't recognized as one by
+  `generate()`'s retry loop from the main entrypoint). Shared internal modules now build
+  into a common chunk imported by every entrypoint, so class identity holds across the
+  package's full public surface.
+
 ## [2.7.0] - 2026-07-21
 
 ### Added
