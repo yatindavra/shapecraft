@@ -1,6 +1,6 @@
 {
   "name": "@aviasole/shapecraft",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "description": "Structured output generation for LLMs in Node.js — token-level constraints for local models, native JSON modes for cloud APIs",
   "author": "Aviasole Technologies",
   "license": "Apache-2.0",
@@ -40,6 +40,11 @@
       "types": "./dist/fhir/index.d.ts",
       "import": "./dist/fhir/index.js",
       "require": "./dist/fhir/index.cjs"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js",
+      "require": "./dist/testing/index.cjs"
     }
   },
   "files": [
