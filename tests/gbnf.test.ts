@@ -177,12 +177,44 @@ describe("GBNF interpreter — adversarial / pathological grammars (stress)", ()
 
   it("right-recursive rule REFERENCES (not */+) have a real depth limit — throws a clear, actionable error instead of a raw stack overflow", () => {
     // Unlike `*`/`+` (iterative BFS, no recursion), a rule reference recurses
-    // through the JS call stack once per repetition. Empirically this breaks
-    // somewhere between depth 900-1000 on this engine/build. Below the limit
-    // it must still work correctly.
+    // through the JS call stack once per repetition. The matcher caps that at
+    // MAX_REF_DEPTH (1000) itself rather than waiting for a native stack
+    // overflow, whose threshold varies by platform, Node version and
+    // worker-thread stack size. Below the cap it must still work correctly.
     const g = `root ::= "a" root | ""`;
     expect(matchesGbnf(g, "a".repeat(500))).toBe(true);
     expect(() => matchesGbnf(g, "a".repeat(5000))).toThrow(/recursion is too deep/i);
+  });
+
+  it("the reference-depth cap is exact and platform-independent, not a native stack overflow", () => {
+    // Pins the boundary: this is the regression that broke CI, where the limit
+    // was whatever the JS stack happened to allow (~8k-20k on some builds, <5k
+    // on others) so the assertion above passed on one machine and failed on the
+    // next. The cap must land on the same input length everywhere.
+    const g = `root ::= "a" root | ""`;
+    // One `a` costs exactly one nested reference, so MAX_REF_DEPTH a's is the
+    // last input that matches and one more is the first that throws.
+    expect(matchesGbnf(g, "a".repeat(1000))).toBe(true);
+    expect(() => matchesGbnf(g, "a".repeat(1001))).toThrow(/recursion is too deep/i);
+  });
+
+  it("the depth cap is per-call, not cumulative across calls", () => {
+    // The counter must unwind on the way out (and on a throw), or a long-lived
+    // process would start rejecting valid inputs after enough matches.
+    const g = `root ::= "a" root | ""`;
+    for (let i = 0; i < 5; i++) expect(matchesGbnf(g, "a".repeat(900))).toBe(true);
+    expect(() => matchesGbnf(g, "a".repeat(2000))).toThrow(/recursion is too deep/i);
+    expect(matchesGbnf(g, "a".repeat(900))).toBe(true);
+  });
+
+  it("a deep reference chain that is not recursive still matches, and fails fast when over the cap", () => {
+    // Non-recursive nesting counts against the same budget; the guard must not
+    // hang or take pathologically long to report it.
+    const t0 = Date.now();
+    expect(() => matchesGbnf(`root ::= "a" root | ""`, "a".repeat(200_000))).toThrow(
+      /recursion is too deep/i
+    );
+    expect(Date.now() - t0).toBeLessThan(2000);
   });
 
   it("right-recursion depth limit does not affect the equivalent */+ formulation", () => {
