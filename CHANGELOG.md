@@ -59,6 +59,13 @@
 
 ### Fixed
 
+- **`matchesGbnf`'s right-recursion depth limit is now enforced by the matcher, not by the
+  JS call stack.** It previously had no explicit limit at all - the "limit" was a native
+  stack-overflow `RangeError` being caught and re-thrown with a friendlier message, so the
+  actual cutoff varied with the platform, Node version and worker-thread stack size (under
+  5k nested references on some builds, past 8k on others). Rule references are now capped at
+  1000, giving the identical cutoff everywhere and failing fast instead of grinding for
+  seconds near the stack ceiling first. The `*`/`+` forms remain iterative and uncapped.
 - **`toJsonSchema()` emitted the legacy OpenAPI 3.0 boolean form for exclusive bounds**
   (`.positive()`/`.negative()`/`.gt()`/`.lt()`) - `exclusiveMinimum: true` + a separate
   `minimum`, instead of the numeric form real JSON Schema requires (`exclusiveMinimum: 0`).

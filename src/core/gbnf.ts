@@ -290,6 +290,20 @@ export function parseGbnf(source: string): GbnfGrammar {
 
 const STEP_BUDGET = 2_000_000;
 
+// matchSet recurses through the JS call stack once per rule *reference* (unlike
+// `*`/`+`, which are iterative BFS and never recurse), so a deeply right-recursive
+// rule against a long input can exhaust it. Cap the depth ourselves rather than
+// relying on the native stack limit, which varies by platform, Node version and
+// worker-thread stack size — an explicit cap fails identically everywhere, and
+// fails fast instead of grinding near the stack ceiling first.
+const MAX_REF_DEPTH = 1000;
+
+const DEPTH_ERROR =
+  "GBNF grammar recursion is too deep for this input — a right-recursive rule " +
+  '(e.g. `list ::= item "," list | item`) needs one JS call per repetition. ' +
+  "Prefer `*`/`+` over recursive rule references for long repeated sequences " +
+  "(they're matched iteratively and have no depth limit).";
+
 /**
  * Returns true iff `input` is fully in the language of the grammar's `root`
  * rule. A set-returning matcher (each node yields the set of positions it can
@@ -302,6 +316,7 @@ export function matchesGbnf(source: string, input: string): boolean {
   const rules = parseGbnf(source);
   const inProgress = new Set<string>();
   let steps = 0;
+  let refDepth = 0;
 
   function matchSet(node: GNode, pos: number): Set<number> {
     if (++steps > STEP_BUDGET) {
@@ -331,10 +346,15 @@ export function matchesGbnf(source: string, input: string): boolean {
         if (!target) throw new Error(`Invalid GBNF grammar: references undefined rule "${node.name}"`);
         const key = `${node.name}@${pos}`;
         if (inProgress.has(key)) return new Set(); // left recursion at this position — dead end
+        if (refDepth >= MAX_REF_DEPTH) throw new Error(DEPTH_ERROR);
         inProgress.add(key);
-        const out = matchSet(target, pos);
-        inProgress.delete(key);
-        return out;
+        refDepth++;
+        try {
+          return matchSet(target, pos);
+        } finally {
+          refDepth--;
+          inProgress.delete(key);
+        }
       }
 
       case "seq": {
@@ -388,19 +408,11 @@ export function matchesGbnf(source: string, input: string): boolean {
   try {
     return matchSet(rules.get("root")!, 0).has(input.length);
   } catch (err) {
-    // matchSet recurses through the JS call stack for every rule *reference*
-    // (unlike `*`/`+`, which are iterative BFS and never recurse) — a
-    // deeply right-recursive rule (`list ::= item "," list | item`) against a
-    // long input can exhaust it. Surface a clear, documented failure instead
-    // of a raw native RangeError with an unrelated-looking stack trace.
-    if (err instanceof RangeError) {
-      throw new Error(
-        "GBNF grammar recursion is too deep for this input — a right-recursive rule " +
-          "(e.g. `list ::= item \",\" list | item`) needs one JS call per repetition. " +
-          "Prefer `*`/`+` over recursive rule references for long repeated sequences " +
-          "(they're matched iteratively and have no depth limit)."
-      );
-    }
+    // Rule references are capped by MAX_REF_DEPTH above, but a grammar whose own
+    // syntax nests deeply enough (nested groups) can still exhaust the stack.
+    // Surface the same clear failure instead of a raw native RangeError with an
+    // unrelated-looking stack trace.
+    if (err instanceof RangeError) throw new Error(DEPTH_ERROR);
     throw err;
   }
 }

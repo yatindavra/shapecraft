@@ -12,6 +12,7 @@ Structured output generation for LLMs in Node.js. Token-level constraints for lo
 
 ```bash
 npm install @aviasole/shapecraft zod
+# or: pnpm add @aviasole/shapecraft zod
 ```
 
 Install backend SDK as needed:
@@ -298,15 +299,16 @@ conforming string can still be a wrong answer (see
   variable-length ambiguous alternation over a 300k-character input with an unmatchable
   terminator trips it in well under a second, throwing a clear "step budget" error rather
   than hanging. This is a real, if hard-to-reach, backstop — not just an untested code path.
-- **Deep right-recursion via a rule *reference* has a hard limit — this is a real gap, not
+- **Deep right-recursion via a rule *reference* has a hard limit - this is a real gap, not
   just theoretical.** `*` and `+` are matched iteratively (no recursion, no limit tested up to
   50k+ repetitions). But a rule written as `list ::= item "," list | item` recurses through
-  the JS call stack once per repetition, and breaks — empirically, somewhere in the
-  900–1000 repetition range on a typical build. Past that point `matchesGbnf` throws a clear,
-  actionable error (*"GBNF grammar recursion is too deep... prefer `*`/`+`"*) instead of a raw
-  native stack-overflow trace. **If your grammar needs a long repeated sequence, write it
-  with `*`/`+`, not recursive rule references** — this is the one place "conventionally
-  right-recursive GBNF" needs a caveat.
+  the JS call stack once per repetition, so it is capped at **1000 nested references**. Past
+  that point `matchesGbnf` throws a clear, actionable error (*"GBNF grammar recursion is too
+  deep... prefer `*`/`+`"*) instead of a raw native stack-overflow trace. The cap is enforced
+  by the matcher itself, so the cutoff is the same number on every platform and Node version
+  rather than whatever the JS stack happens to allow. **If your grammar needs a long repeated
+  sequence, write it with `*`/`+`, not recursive rule references** - this is the one place
+  "conventionally right-recursive GBNF" needs a caveat.
 
 ## Backends & Guarantee Levels
 
