@@ -5,7 +5,8 @@ import { runAgents } from "../src/agentic/orchestrator.js";
 import { anthropic } from "../src/backends/anthropic.js";
 import { openai } from "../src/backends/openai.js";
 import { groq } from "../src/backends/groq.js";
-import { MaxTurnsExceededError, SchemaViolationError } from "../src/types.js";
+import { mistral } from "../src/backends/mistral.js";
+import { MaxRetriesExceededError, MaxTurnsExceededError, SchemaViolationError } from "../src/types.js";
 import type { ShapecraftModel } from "../src/types.js";
 
 /** Returns `values` in order, one per `generate()` call; throws once then succeeds if `failFirst`. */
@@ -105,6 +106,30 @@ describe("runAgents", () => {
     expect(capturedPrompt).not.toContain("extraUnvalidatedField");
     expect(capturedPrompt).toContain("technical");
   });
+
+  // Standing check: wrong-format input. A step whose output never satisfies its
+  // schema must fail loudly rather than forwarding unvalidated data down the chain.
+  // The surfaced error is MaxRetriesExceededError — the step's own retry loop runs
+  // first and wraps the underlying violation, exactly as a plain generate() would.
+  it("throws MaxRetriesExceededError when a step's output never matches its schema", async () => {
+    const alwaysWrongFormat: ShapecraftModel = {
+      id: "mock:wrong-format",
+      guaranteeLevel: "best-effort",
+      async generate<T>(): Promise<T> {
+        return { category: "not-a-valid-enum-member" } as T;
+      },
+    };
+    const triage = defineAgent({
+      model: alwaysWrongFormat,
+      schema: TriageSchema,
+      role: "triage",
+      options: { maxRetries: 1 },
+    });
+
+    await expect(
+      runAgents({ triage }, "input", { router: (last) => (last ? "done" : "triage") })
+    ).rejects.toBeInstanceOf(MaxRetriesExceededError);
+  });
 });
 
 // ─── Real API — triage -> technical chain, skipped when key not in .env ──────
@@ -115,6 +140,7 @@ const RealTechnicalSchema = z.object({ diagnosis: z.string(), steps: z.array(z.s
 const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
 const hasOpenAI = !!process.env.OPENAI_API_KEY;
 const hasGroq = !!process.env.GROQ_API_KEY;
+const hasMistral = !!process.env.MISTRAL_API_KEY;
 
 function realChain(model: ShapecraftModel) {
   const triage = defineAgent({
@@ -173,5 +199,58 @@ describe("runAgents — Groq backend (real API)", () => {
     expect(result.trace.map((t) => t.role)).toEqual(["triage", "technical"]);
     expect(result.final).toMatchObject({ diagnosis: expect.any(String), steps: expect.any(Array) });
     console.log("[groq real] agentic chain result:", result.final);
+  }, 30_000);
+});
+
+describe("runAgents — Mistral backend (real API)", () => {
+  it.skipIf(!hasMistral)("triages then diagnoses, threading validated data forward", async () => {
+    const result = await realChain(mistral({ model: "mistral-small-latest" }));
+    expect(result.trace.map((t) => t.role)).toEqual(["triage", "technical"]);
+    expect(result.final).toMatchObject({ diagnosis: expect.any(String), steps: expect.any(Array) });
+    console.log("[mistral real] agentic chain result:", result.final);
+  }, 30_000);
+});
+
+// ─── Standing check: prompt unrelated to the schema, against every live backend ──
+// The model is asked something with nothing to do with support triage. The chain
+// must still land on a schema-valid category or fail loudly with
+// SchemaViolationError — the one unacceptable outcome is silently returning
+// unvalidated text as if it were structured data.
+function unrelatedPromptChain(model: ShapecraftModel) {
+  const triage = defineAgent({
+    model,
+    schema: RealTriageSchema,
+    role: "triage",
+    systemPrompt: 'Classify the support request into exactly one category: "billing", "technical", or "general".',
+  });
+
+  return runAgents({ triage }, "What is the boiling point of water at the summit of Mount Everest?", {
+    router: (last) => (last ? "done" : "triage"),
+  });
+}
+
+async function expectSchemaValidOrLoudFailure(run: Promise<{ final: unknown }>, label: string) {
+  try {
+    const result = await run;
+    const category = (result.final as { category?: unknown }).category;
+    expect(["billing", "technical", "general"]).toContain(category);
+    console.log(`[${label} unrelated-prompt] coerced to valid category:`, category);
+  } catch (error) {
+    expect(error).toBeInstanceOf(SchemaViolationError);
+    console.log(`[${label} unrelated-prompt] failed loudly with SchemaViolationError`);
+  }
+}
+
+describe("runAgents — unrelated prompt against the schema (real API)", () => {
+  it.skipIf(!hasAnthropic)("anthropic stays schema-valid or throws", async () => {
+    await expectSchemaValidOrLoudFailure(unrelatedPromptChain(anthropic({ model: "claude-haiku-4-5-20251001" })), "anthropic");
+  }, 30_000);
+
+  it.skipIf(!hasGroq)("groq stays schema-valid or throws", async () => {
+    await expectSchemaValidOrLoudFailure(unrelatedPromptChain(groq({ model: "llama-3.3-70b-versatile" })), "groq");
+  }, 30_000);
+
+  it.skipIf(!hasMistral)("mistral stays schema-valid or throws", async () => {
+    await expectSchemaValidOrLoudFailure(unrelatedPromptChain(mistral({ model: "mistral-small-latest" })), "mistral");
   }, 30_000);
 });

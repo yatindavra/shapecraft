@@ -13,3 +13,7 @@ export { defineAgent } from "./agent.js";
 export type { Agent } from "./agent.js";
 export { runAgents } from "./orchestrator.js";
 export type { AgentResult, AgentRouter, RunAgentsOptions, RunAgentsResult } from "./orchestrator.js";
+
+// `runAgents()` throws this on hitting `maxTurns`. Re-exported here so catching it
+// doesn't force a second import from the root entrypoint.
+export { MaxTurnsExceededError } from "../types.js";
