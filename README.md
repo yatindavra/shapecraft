@@ -700,126 +700,6 @@ try {
 
 A handler that throws — including the terminal skill's own handler — doesn't abort the loop. It's recorded as an error turn and fed back to the model, which can adapt (different arguments, a different skill, or try again) on the next turn. The loop only ever exits early via a thrown `MaxSkillTurnsExceededError`; a successful terminal-skill call is the only path to `{ status: "complete" }`.
 
-## Skill-Based Generation
-
-Let the model pick which of several typed operations to run, with validated arguments — instead of always extracting one fixed shape. Register a set of skills (name, Zod input schema, handler function), and `generateSkillCall()` dispatches to the right one:
-
-```typescript
-import { z } from "zod";
-import { SkillRegistry, generateSkillCall, runSkill } from "@aviasole/shapecraft";
-
-const registry = new SkillRegistry();
-
-registry.register({
-  name: "lookupOrder",
-  description: "Look up an order's status by its order ID",
-  inputSchema: z.object({ orderId: z.string() }),
-  handler: async ({ orderId }) => db.orders.findById(orderId),
-});
-
-registry.register({
-  name: "sendRefund",
-  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
-  handler: async ({ orderId, amount }) => paymentsApi.refund(orderId, amount),
-});
-
-const call = await generateSkillCall(model, registry, "What's the status of order #4521?");
-// { skill: "lookupOrder", args: { orderId: "4521" } }
-
-const result = await runSkill(registry, call);
-```
-
-`generateSkillCall()` is a thin wrapper around `generate()` — it builds a `z.discriminatedUnion` over every registered skill's `inputSchema` and dispatches through the same retry loop, so `guaranteeLevel` semantics (native/constrained/best-effort) apply per backend exactly like any other call. This is deliberately **not** built on OpenAI/Anthropic's native tool-calling APIs — those don't exist on Ollama or `llamaCpp()` at all, so schema-based dispatch is what makes tool use work identically across every backend, local models included.
-
-v1 skill schemas are **Zod only** — that's the mechanism that makes the discriminated-union dispatch work with zero new validation code.
-
-### Looping toward a goal
-
-`runSkillLoop()` repeatedly picks and runs a skill, feeding each result back as context, until a skill marked `terminal: true` succeeds or `maxTurns` is hit:
-
-```typescript
-import { runSkillLoop, MaxSkillTurnsExceededError } from "@aviasole/shapecraft";
-
-registry.register({
-  name: "sendRefund",
-  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
-  handler: async ({ orderId, amount }) => paymentsApi.refund(orderId, amount),
-  terminal: true, // running this successfully ends the loop
-});
-
-try {
-  const { result, memory } = await runSkillLoop(model, registry, "Refund order #4521");
-  console.log(result); // whatever the terminal skill's handler returned
-} catch (err) {
-  if (err instanceof MaxSkillTurnsExceededError) {
-    // err.memory is JSON-serializable — persist it and call runSkillLoop() again
-    // with a fresh maxTurns budget (and { memory: err.memory }) to continue.
-  }
-}
-```
-
-A handler that throws — including the terminal skill's own handler — doesn't abort the loop. It's recorded as an error turn and fed back to the model, which can adapt (different arguments, a different skill, or try again) on the next turn. The loop only ever exits early via a thrown `MaxSkillTurnsExceededError`; a successful terminal-skill call is the only path to `{ status: "complete" }`.
-
-## Skill-Based Generation
-
-Let the model pick which of several typed operations to run, with validated arguments — instead of always extracting one fixed shape. Register a set of skills (name, Zod input schema, handler function), and `generateSkillCall()` dispatches to the right one:
-
-```typescript
-import { z } from "zod";
-import { SkillRegistry, generateSkillCall, runSkill } from "@aviasole/shapecraft";
-
-const registry = new SkillRegistry();
-
-registry.register({
-  name: "lookupOrder",
-  description: "Look up an order's status by its order ID",
-  inputSchema: z.object({ orderId: z.string() }),
-  handler: async ({ orderId }) => db.orders.findById(orderId),
-});
-
-registry.register({
-  name: "sendRefund",
-  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
-  handler: async ({ orderId, amount }) => paymentsApi.refund(orderId, amount),
-});
-
-const call = await generateSkillCall(model, registry, "What's the status of order #4521?");
-// { skill: "lookupOrder", args: { orderId: "4521" } }
-
-const result = await runSkill(registry, call);
-```
-
-`generateSkillCall()` is a thin wrapper around `generate()` — it builds a `z.discriminatedUnion` over every registered skill's `inputSchema` and dispatches through the same retry loop, so `guaranteeLevel` semantics (native/constrained/best-effort) apply per backend exactly like any other call. This is deliberately **not** built on OpenAI/Anthropic's native tool-calling APIs — those don't exist on Ollama or `llamaCpp()` at all, so schema-based dispatch is what makes tool use work identically across every backend, local models included.
-
-v1 skill schemas are **Zod only** — that's the mechanism that makes the discriminated-union dispatch work with zero new validation code.
-
-### Looping toward a goal
-
-`runSkillLoop()` repeatedly picks and runs a skill, feeding each result back as context, until a skill marked `terminal: true` succeeds or `maxTurns` is hit:
-
-```typescript
-import { runSkillLoop, MaxSkillTurnsExceededError } from "@aviasole/shapecraft";
-
-registry.register({
-  name: "sendRefund",
-  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
-  handler: async ({ orderId, amount }) => paymentsApi.refund(orderId, amount),
-  terminal: true, // running this successfully ends the loop
-});
-
-try {
-  const { result, memory } = await runSkillLoop(model, registry, "Refund order #4521");
-  console.log(result); // whatever the terminal skill's handler returned
-} catch (err) {
-  if (err instanceof MaxSkillTurnsExceededError) {
-    // err.memory is JSON-serializable — persist it and call runSkillLoop() again
-    // with a fresh maxTurns budget (and { memory: err.memory }) to continue.
-  }
-}
-```
-
-A handler that throws — including the terminal skill's own handler — doesn't abort the loop. It's recorded as an error turn and fed back to the model, which can adapt (different arguments, a different skill, or try again) on the next turn. The loop only ever exits early via a thrown `MaxSkillTurnsExceededError`; a successful terminal-skill call is the only path to `{ status: "complete" }`.
-
 ## CLI
 
 Validate an already-produced JSON file against a raw JSON Schema file, without writing any code:
@@ -836,7 +716,7 @@ Chain validated `generate()` calls together, behind a separate (tree-shakeable) 
 
 ```typescript
 import { defineAgent, runAgents } from "@aviasole/shapecraft/agentic";
-import { generate, openai } from "@aviasole/shapecraft";
+import { openai } from "@aviasole/shapecraft";
 import { z } from "zod";
 
 const triage = defineAgent({
@@ -849,13 +729,17 @@ const technical = defineAgent({
   model: openai({ model: "gpt-4o-mini" }),
   schema: z.object({ diagnosis: z.string(), steps: z.array(z.string()) }),
   role: "technical",
+  // The default handoff forwards only the previous step's validated data, so this
+  // step would otherwise see a bare { category: "technical" } with no description
+  // of the actual problem. Carry the original input forward alongside it.
+  buildPrompt: (last, _history, input) => `Original request: ${input}\nTriage: ${JSON.stringify(last?.data)}`,
 });
 
 const result = await runAgents(
   { triage, technical },
   "My app crashes when I upload a file over 10MB",
   {
-    router: (last, history) => {
+    router: (last) => {
       if (!last) return "triage";
       if (last.role === "triage" && (last.data as { category: string }).category === "technical") return "technical";
       return "done";
@@ -875,7 +759,7 @@ What this does and doesn't guarantee:
 - **Each step is validated** exactly as strongly as a standalone `generate()` call with that model/schema. Orchestration adds zero new validation weakness per step.
 - **The chain as a whole is not validated** — nothing checks the *sequence* of agents was "correct" or that one step's output is semantically consistent with the next. That's the router's responsibility, same as any hand-written control flow.
 - **Routing is deterministic and caller-owned**, not learned/inferred by a model. If you want a model to decide routing, put that decision inside an agent's own schema (e.g. triage's `category` field) and read it in your router.
-- **No loop-prevention beyond `maxTurns`** (default 10) — a router that never returns `"done"` throws `MaxTurnsExceededError`, same blunt guard `TurnaroundOptions.maxTurns` uses.
+- **No loop-prevention beyond `maxTurns`** (default 10) — a router that never returns `"done"` throws `MaxTurnsExceededError` (exported from both `@aviasole/shapecraft/agentic` and the root entrypoint), same blunt guard `TurnaroundOptions.maxTurns` uses.
 
 Out of scope for v1: concurrent/parallel agents (use `generateBatch()` for independent work), autonomous routing, tool-calling within a step, shared mutable state across agents, and persisted/resumable chains.
 

@@ -9,6 +9,19 @@
   model/schema/role), threading one step's *validated* output into the next via a
   caller-written `router` function. Each step keeps its own retry/guarantee-level behavior;
   no new validation engine. See README `## Multi-agent orchestration`.
+  - `MaxTurnsExceededError` (thrown when a router never returns `"done"` within `maxTurns`)
+    is re-exported from the `/agentic` entrypoint, so catching it doesn't require a second
+    import from the package root.
+
+### Fixed
+
+- **README had three byte-identical copies of the `## Skill-Based Generation` section**
+  (a merge artifact, present since 2.4.0). Removed the two duplicates; no content change to
+  the section itself.
+- The README's multi-agent example gave its second agent no `buildPrompt`, so that step
+  received only the previous step's validated `{ category }` and never saw the original
+  request it was supposed to diagnose. The example now carries the original input forward,
+  matching what the test suite and the example app actually do.
 
 ## [2.6.0] - 2026-07-15
 
