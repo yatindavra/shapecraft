@@ -27,9 +27,11 @@ export function toolParametersJsonSchema(schema: SchemaInput): Record<string, un
 }
 
 /**
- * Shared by every OpenAI-wire-format backend (openai(), groq(), and - once
- * their branches merge - fireworks()/mistral()/openRouter()/deepseek(), which
- * all use the same `{ type: "function", function: {...} }` tools shape).
+ * Shared by every OpenAI-wire-format backend - openai(), groq(), fireworks(),
+ * mistral(), openRouter() and deepseek() all use the same
+ * `{ type: "function", function: {...} }` tools shape. gemini() is the one
+ * backend that can't reuse this: it goes through @google/genai rather than an
+ * OpenAI-shaped chat/completions endpoint.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function toOpenAiCompatibleTools(tools: ToolDefinition[]): any[] {
@@ -62,10 +64,10 @@ export function toOpenAiCompatibleMessages(messages: ChatMessage[], systemPrompt
 }
 
 /**
- * One tool-calling turn against any OpenAI-wire-format chat completions
- * client (openai(), groq(), and - once their branches merge -
- * fireworks()/mistral()/openRouter()/deepseek() all share this exact request/
- * response shape, differing only in which SDK client hits it).
+ * One tool-calling turn against any OpenAI-wire-format chat completions client.
+ * openai(), groq(), fireworks(), mistral(), openRouter() and deepseek() all
+ * share this exact request/response shape, differing only in which SDK client
+ * hits it.
  */
 export async function openAiCompatibleToolCall(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

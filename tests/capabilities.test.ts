@@ -15,12 +15,20 @@ import { mockModel } from "./helpers/index.js";
 const PersonSchema = z.object({ name: z.string(), age: z.number() });
 
 describe("ShapecraftModel.capabilities", () => {
+  // Split by toolCalling. Every backend on the OpenAI wire format shares the
+  // openAiCompatibleToolCall() helper; anthropic and ollama have their own
+  // native implementations. gemini is the lone holdout - it goes through
+  // @google/genai, not an OpenAI-shaped chat/completions endpoint.
   it.each([
     ["openai", openai({ model: "gpt-4o-mini" })],
     ["groq", groq({ model: "llama-3.3-70b-versatile" })],
     ["anthropic", anthropic({ model: "claude-haiku-4-5-20251001" })],
     ["ollama", ollama({ model: "llama3.2" })],
-  ])("%s exposes streaming/chat/structuredOutput/toolCalling/skillDispatch true", (_name, model) => {
+    ["fireworks", fireworks({ model: "accounts/fireworks/models/llama-v3p1-70b-instruct" })],
+    ["mistral", mistral({ model: "mistral-large-latest" })],
+    ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
+    ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
+  ])("%s exposes streaming/chat/structuredOutput/skillDispatch/toolCalling true", (_name, model) => {
     expect(model.capabilities).toEqual({
       streaming: true,
       chat: true,
@@ -30,21 +38,18 @@ describe("ShapecraftModel.capabilities", () => {
     });
   });
 
-  it.each([
-    ["fireworks", fireworks({ model: "accounts/fireworks/models/llama-v3p1-70b-instruct" })],
-    ["mistral", mistral({ model: "mistral-large-latest" })],
-    ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
-    ["gemini", gemini({ model: "gemini-flash-latest" })],
-    ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
-  ])("%s exposes streaming/chat/structuredOutput/skillDispatch true, toolCalling false", (_name, model) => {
-    expect(model.capabilities).toEqual({
-      streaming: true,
-      chat: true,
-      structuredOutput: true,
-      toolCalling: false,
-      skillDispatch: true,
-    });
-  });
+  it.each([["gemini", gemini({ model: "gemini-flash-latest" })]])(
+    "%s exposes streaming/chat/structuredOutput/skillDispatch true, toolCalling false",
+    (_name, model) => {
+      expect(model.capabilities).toEqual({
+        streaming: true,
+        chat: true,
+        structuredOutput: true,
+        toolCalling: false,
+        skillDispatch: true,
+      });
+    }
+  );
 
   it.each([
     ["openai", openai({ model: "gpt-4o-mini" })],

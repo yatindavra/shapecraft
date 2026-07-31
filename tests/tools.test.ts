@@ -5,6 +5,7 @@ import { openai } from "../src/backends/openai.js";
 import { groq } from "../src/backends/groq.js";
 import { anthropic } from "../src/backends/anthropic.js";
 import { ollama } from "../src/backends/ollama.js";
+import { mistral } from "../src/backends/mistral.js";
 import { MaxToolTurnsExceededError, ToolExecutionError } from "../src/types.js";
 import type { ShapecraftModel, ToolCallResponse, ToolDefinition } from "../src/types.js";
 
@@ -160,6 +161,7 @@ const hasOpenAI = !!process.env.OPENAI_API_KEY;
 const hasGroq = !!process.env.GROQ_API_KEY;
 const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
 const hasOllama = !!process.env.OLLAMA_MODEL;
+const hasMistral = !!process.env.MISTRAL_API_KEY;
 
 const getWeatherTool: ToolDefinition = {
   name: "get_weather",
@@ -204,4 +206,14 @@ describe("generateWithTools - Ollama backend (real API)", () => {
   it.skipIf(!hasOllama)("calls get_weather then answers", async () => {
     await realWeatherCheck(ollama({ model: process.env.OLLAMA_MODEL ?? "gemma4:e2b", timeoutMs: 300_000 }));
   }, 480_000);
+});
+
+// mistral() is the one newly-wired OpenAI-compatible backend with a usable key
+// here, so it stands in as the live proof that openAiCompatibleToolCall() works
+// through a non-openai()/groq() client. fireworks()/openRouter()/deepseek() take
+// the identical code path but have no working credentials to verify against.
+describe("generateWithTools - Mistral backend (real API)", () => {
+  it.skipIf(!hasMistral)("calls get_weather then answers", async () => {
+    await realWeatherCheck(mistral({ model: "mistral-small-latest" }));
+  }, 30_000);
 });
