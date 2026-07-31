@@ -1,5 +1,39 @@
 # Changelog
 
+## [2.8.0] - 2026-07-31
+
+### Added
+
+- **Native tool/function-calling** - `generateWithTools(model, tools, schema, prompt, options?)`.
+  Passes the running message history plus your tool definitions to the model's own
+  `toolCall()` turn, executes requested tools locally (validating each call's arguments
+  against that tool's `parameters` schema first), feeds results back, and repeats until
+  the model stops asking for tools. The final answer is extracted through an ordinary
+  `generate()` call over the transcript, so the structured-output guarantee is identical
+  to any standalone `generate()` - not a weaker tool-calling-specific check.
+  - A bad tool call (unknown name, or arguments that fail the tool's schema) is fed back
+    to the model as a `tool` error message so it can retry - re-prompting can fix that.
+    A handler that throws is not recoverable that way, so it aborts immediately with
+    `ToolExecutionError`. Exceeding `maxTurns` (default 10) throws
+    `MaxToolTurnsExceededError`.
+  - `ToolDefinition.parameters` accepts Zod or `{ jsonSchema }` only. `pattern`/`validate`/
+    `xml` have no sensible named-parameters representation and throw clearly instead of
+    silently producing a broken tool definition.
+  - Available on 8 of 9 backends: `openai()`, `groq()`, `fireworks()`, `mistral()`,
+    `openRouter()` and `deepseek()` share one `openAiCompatibleToolCall()` implementation
+    (identical wire format); `anthropic()` and `ollama()` have their own. `gemini()` is
+    the exception - it goes through `@google/genai` rather than an OpenAI-shaped
+    chat/completions endpoint. `ModelCapabilities.toolCalling` reports this per backend.
+  - Live-verified against Groq, Anthropic and Mistral. The other OpenAI-compatible
+    backends take the identical code path but had no usable credentials to test against.
+
+### Fixed
+
+- `toJsonSchema()` now strips `$schema` on the Zod v4 path too, not just the
+  `zod-to-json-schema` fallback. Zod v4's native `toJSONSchema()` emits its own
+  draft-2020-12 `$schema` key, which would otherwise reach backends that reject
+  extraneous top-level schema keys.
+
 ## [2.7.0] - 2026-07-31
 
 ### Added

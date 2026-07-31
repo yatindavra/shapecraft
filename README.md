@@ -765,7 +765,7 @@ Out of scope for v1: concurrent/parallel agents (use `generateBatch()` for indep
 
 ## Tool Calling
 
-Lets a model call your own functions mid-turn, see the results, and continue - using each provider's **native** tool-calling API (OpenAI/Groq/Anthropic/Ollama each have a different wire shape under the hood, normalized to one interface), not a prompted convention. This is a different mechanism from `runAgents()`/skill-style dispatch - it's the one capability every backend previously declared `false` for.
+Lets a model call your own functions mid-turn, see the results, and continue - using each provider's **native** tool-calling API, not a prompted convention. The OpenAI-wire-format backends share one implementation; Anthropic and Ollama each have a different wire shape under the hood, normalized to the same interface. This is a different mechanism from `runAgents()`/skill-style dispatch.
 
 ```typescript
 import { generateWithTools, anthropic } from "@aviasole/shapecraft";
@@ -800,7 +800,7 @@ What this does and doesn't guarantee:
 - **A tool handler's own correctness is entirely your responsibility.** shapecraft only guarantees the handler's *return value* gets fed back to the model as-is.
 - **No loop-prevention beyond `maxTurns`** (default 10) - a model that keeps requesting tools forever throws `MaxToolTurnsExceededError`. A handler that throws aborts immediately with `ToolExecutionError` instead (a business-logic failure, never retried the way a bad argument is - re-prompting the model can't fix a broken handler).
 
-Available today on `openai()`, `groq()`, `anthropic()`, `ollama()`. Not yet on `fireworks()`/`mistral()`/`openRouter()`/`gemini()`/`deepseek()`/`llamaCpp()` (different branches - natural follow-up once merged). Non-streaming in v1, same reasoning `runAgents()` gives for skipping streaming.
+Available on `openai()`, `groq()`, `anthropic()`, `ollama()`, `fireworks()`, `mistral()`, `openRouter()` and `deepseek()`. Not on `gemini()` (routed through `@google/genai`, not an OpenAI-shaped chat/completions endpoint) or `llamaCpp()` (local GGUF inference, no tools API). Check `model.capabilities.toolCalling` rather than hardcoding that list. Non-streaming in v1, same reasoning `runAgents()` gives for skipping streaming.
 
 ## What shapecraft guarantees — and what it doesn't
 
