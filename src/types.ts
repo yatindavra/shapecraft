@@ -124,7 +124,12 @@ export interface ModelCapabilities {
   streaming: boolean;
   chat: boolean;
   structuredOutput: boolean;
-  /** Native provider function-calling (OpenAI/Anthropic-style `tools`). Not yet built by any backend. */
+  /**
+   * Native provider function-calling (OpenAI/Anthropic-style `tools`), driving
+   * `generateWithTools()`. True wherever the backend implements `toolCall()`.
+   * `llamaCpp()` is the one backend without it - local GGUF inference exposes no
+   * tools API - so check this flag rather than assuming.
+   */
   toolCalling: boolean;
   /**
    * Skill-based dispatch via `generateSkillCall()`/`runSkillLoop()` — built entirely
