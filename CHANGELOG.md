@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.2.0] - 2026-07-15
+## [2.7.0] - 2026-07-31
 
 ### Added
 
@@ -9,6 +9,158 @@
   model/schema/role), threading one step's *validated* output into the next via a
   caller-written `router` function. Each step keeps its own retry/guarantee-level behavior;
   no new validation engine. See README `## Multi-agent orchestration`.
+
+## [2.6.0] - 2026-07-15
+
+> Also contains everything listed under 2.5.0 below. That version was never published to
+> npm, so the five backends and two fixes it documents reached users for the first time in
+> this release.
+
+### Added
+
+- **CLI** - `npx shapecraft validate --schema schema.json --output output.json` validates
+  an already-produced JSON file against a raw JSON Schema file without writing any code.
+  Reuses `checkJsonSchema` (the same structural check `generate()` uses internally) -
+  `required` fields must be present and non-empty, `type`/`enum` must match, nested
+  `properties`/`items` are checked recursively. Exits `0` and prints `✓ ... matches ...`
+  on success; exits `1` with the specific violation on failure. New `bin` entry
+  (`src/cli.ts`, built alongside the existing `index`/`fhir` entrypoints) - no new
+  dependency, no argument-parsing library.
+
+## [2.5.0] - 2026-07-15 [NOT PUBLISHED]
+
+> **This version was not published to npm** - the registry goes directly from `2.4.0` to
+> `2.6.0`. Everything listed below shipped as part of 2.6.0 instead, so install 2.6.0 or
+> later to get any of it.
+
+### Added
+
+- **`fireworks()` backend** - Fireworks AI, reached via the `openai` package pointed at
+  Fireworks' base URL (no new SDK dependency). `guaranteeLevel: "native"` - JSON/Zod
+  schemas use Fireworks' server-side JSON schema mode, same tier as `openai()`/`groq()`.
+  - The differentiator: a `{ gbnf }` input gets Fireworks' own grammar mode
+    (`response_format: { type: "grammar", grammar }`), a genuine token-level constraint
+    applied server-side - not the prompted-and-checked best-effort path every other cloud
+    backend falls back to for gbnf. It's the same real guarantee `llamaCpp()` gives
+    locally, just without needing a local `.gguf` file.
+- **`mistral()` backend** - Mistral AI, same `openai`-package-pointed-at-a-different-base-URL
+  approach as `fireworks()`. `guaranteeLevel: "native"` - `response_format: { type:
+  "json_schema", ... }` is server-side enforced, same tier as `openai()`/`groq()`/
+  `fireworks()`. No grammar mode - a `{ gbnf }` input is prompt-only, best-effort, same
+  as `openai()`/`groq()`.
+- **`openRouter()` backend** - same `openai`-package-pointed-at-a-different-base-URL
+  approach as `fireworks()`/`mistral()`. `guaranteeLevel: "best-effort"`, deliberately
+  not `"native"` like the other cloud backends - OpenRouter is pass-through across many
+  different underlying providers/models, and `response_format: { type: "json_schema" }`
+  enforcement isn't guaranteed for every model it can route to. Defensively requests
+  `extractJson: true` on every call for the same reason `anthropic()` needs it. No
+  grammar mode - a `{ gbnf }` input is prompt-only, best-effort.
+- **`gemini()` backend** - Google Gemini, via the official `@google/genai` SDK rather
+  than `openai`-pointed-at-a-different-base-URL - Gemini's OpenAI-compatible endpoint is
+  a migration bridge for OpenAI users, not its primary integration path, and doesn't
+  expose `responseJsonSchema` (plain JSON Schema, what `toJsonSchema()` already produces)
+  - only the older `responseSchema` (Gemini's own Type-enum OpenAPI-subset shape).
+  `guaranteeLevel: "native"` - `responseJsonSchema`/`responseMimeType: "application/json"`
+  is server-side constrained decoding, same tier as `openai()`/`groq()`/`fireworks()`/
+  `mistral()`. No grammar mode - a `{ gbnf }` input is prompt-only, best-effort, same as
+  every other backend without one.
+- **`deepseek()` backend** - DeepSeek, reached via the `openai` package pointed at DeepSeek's
+  base URL (no new SDK dependency, same approach as `fireworks()`/`mistral()`/`openRouter()`).
+  `guaranteeLevel: "native"` - `response_format: { type: "json_object" }` is a real,
+  server-side JSON-mode toggle, same tier as `groq()` - but unlike `fireworks()`/`mistral()`,
+  DeepSeek's API only supports `"json_object"` (valid JSON), not a schema-strict
+  `"json_schema"` mode. Requires the literal word "json" in the prompt for `json_object`
+  mode to behave, same restriction as `groq()`. No grammar mode - a `{ gbnf }` input is
+  prompt-only, best-effort, same as every other backend without one. Defaults to
+  `deepseek-v4-flash` - `deepseek-chat`/`deepseek-reasoner` are deprecated 2026-07-24 in
+  favor of `deepseek-v4-flash` (non-thinking) / `deepseek-v4-pro` (thinking).
+
+### Fixed
+
+- **`matchesGbnf`'s right-recursion depth limit is now enforced by the matcher, not by the
+  JS call stack.** It previously had no explicit limit at all - the "limit" was a native
+  stack-overflow `RangeError` being caught and re-thrown with a friendlier message, so the
+  actual cutoff varied with the platform, Node version and worker-thread stack size (under
+  5k nested references on some builds, past 8k on others). Rule references are now capped at
+  1000, giving the identical cutoff everywhere and failing fast instead of grinding for
+  seconds near the stack ceiling first. The `*`/`+` forms remain iterative and uncapped.
+- **`toJsonSchema()` emitted the legacy OpenAPI 3.0 boolean form for exclusive bounds**
+  (`.positive()`/`.negative()`/`.gt()`/`.lt()`) - `exclusiveMinimum: true` + a separate
+  `minimum`, instead of the numeric form real JSON Schema requires (`exclusiveMinimum: 0`).
+  Backends that validate the schema itself strictly (confirmed on Mistral, which rejected
+  it outright with a 422) reject the boolean form before the model ever runs. Switched
+  `zodToJsonSchema`'s target from `openApi3` to `jsonSchema7` (stripping the extraneous
+  `$schema` key it adds). Affects every backend's Zod-schema handling, not just Mistral -
+  verified live against `groq()`, `anthropic()`, and `ollama()` with the schema that broke
+  Mistral.
+
+## [2.4.0] - 2026-07-17
+
+### Added
+
+- **Skill-based generation** - let the model pick which of several registered typed
+  operations to run, with validated arguments, instead of always extracting one fixed
+  shape.
+  - `SkillRegistry` - register a skill as `{ name, description?, inputSchema, handler,
+    terminal? }`. `inputSchema` is Zod-only in v1 - that's the mechanism that lets the
+    dispatch schema be built as a `z.discriminatedUnion` with zero new validation code.
+  - `generateSkillCall(model, registry, prompt, options?)` - builds the dispatch schema
+    from the registry and calls `generate()`, returning `{ skill, args }`. A thin
+    wrapper, not a separate mechanism: same retry loop, same `guaranteeLevel` semantics
+    per backend as any other `generate()` call. Deliberately not built on any
+    provider's native tool-calling API - those don't exist on Ollama or `llamaCpp()` at
+    all, so this is what makes dispatch work identically across every backend.
+  - `runSkill(registry, call)` - the executor. Throws `SkillExecutionError` (not
+    `SchemaViolationError`) if the handler itself throws - a business-logic failure,
+    never retried the way a structural failure is.
+  - `runSkillLoop(model, registry, goal, options?)` - repeatedly dispatches + runs a
+    skill, feeding results back as context, until a skill marked `terminal: true`
+    succeeds or `maxTurns` is hit (`MaxSkillTurnsExceededError`, carrying the loop's
+    `memory` so a caller can resume with a fresh turn budget). A handler failure -
+    including the terminal skill's own - is recorded as an error turn and fed back to
+    the model rather than aborting the loop.
+  - New `ModelCapabilities.skillDispatch: boolean`, `true` on all 4 built-in backends.
+    `toolCalling` is untouched - it keeps meaning native provider function-calling, a
+    different, still-unbuilt thing.
+
+## [2.3.0] - 2026-07-16
+
+### Added
+
+- **FHIR `Extension` support** - every R4 preset (`Patient`, `Observation`, `Condition`,
+  `MedicationRequest`, `Encounter`) now accepts an optional `extension?: Extension[]`. Common-
+  subset `Extension` type covers `url` plus `valueString`/`valueInteger`/`valueBoolean`/
+  `valueCodeableConcept` - real FHIR's `value[x]` has ~20 polymorphic variants; unsupported
+  ones pass through unvalidated (no `oneOf` support in `checkJsonSchema`) rather than being
+  rejected.
+
+## [2.2.0] - 2026-07-10
+
+### Added
+
+- Raw GBNF grammar input - `generate(model, { gbnf: grammarString }, prompt)`. Output is the
+  raw string that conforms to the grammar.
+- `llamaCpp()` backend (node-llama-cpp) - applies a GBNF grammar at the token level, so
+  output is valid by construction (`constrained`).
+- Bundled pragmatic GBNF interpreter (`matchesGbnf`, `parseGbnf`, `buildGbnfSystemPrompt`
+  exported) - validates grammar output on backends without a native grammar parameter, and
+  fails fast on a malformed grammar before any model call.
+- Streaming for `{ gbnf }` emits `delta`/`done` only (no per-field `partial`), consistent
+  with other string-language inputs.
+
+### Fixed
+
+- `checkJsonSchema` enforces `required` fields as present AND non-empty, matching the XML
+  validation path - stops a constrained grammar from satisfying a required field with an
+  empty `""`/`[]`/`{}`.
+- `groq()` no longer forces `response_format: json_object` for `{ gbnf }` inputs (it already
+  skipped this for `{ xml }`, but not `gbnf`) - Groq's API rejects json_object mode outright
+  when the prompt doesn't contain the word "json", which broke every gbnf call on this
+  backend. Fixed in both `generate()` and `generateStream()`.
+- `matchesGbnf` now throws a clear, actionable error ("recursion is too deep... prefer
+  `*`/`+`") when a deeply right-recursive rule reference exceeds the JS call stack
+  (empirically ~900-1000 repetitions), instead of letting a raw native stack-overflow
+  `RangeError` propagate.
 
 ## [2.1.0] - 2026-07-10
 
@@ -116,17 +268,17 @@
 ## [2.0.1] - 2026-07-04
 
 ### Added
-- `generateStream()` — streams tokens live for UX while validating the assembled
-  response exactly once, through the same pipeline as `generate()`.
-- `StreamHandle` with two independent views: `textStream` (raw text deltas) and
-  `events` (full lifecycle: `attempt-start`, `delta`, `partial`, `attempt-failed`, `done`).
-- Incremental per-field validation (`partial` events) — for JSON/Zod object schemas,
-  each top-level field is validated the instant its own value closes in the stream,
-  before the whole object finishes.
-- Visible retries — a streaming attempt that fails validation emits `attempt-failed`
-  and starts a fresh `attempt-start`, since already-streamed tokens can't be un-sent.
-- `generateStream()` added to all four backends (openai, groq, anthropic, ollama),
-  falling back to one-shot `generate()` for a model without native streaming support.
+- `generateStream()` - streams tokens live for UX while validating the assembled response
+  exactly once, through the same pipeline as `generate()`.
+- `StreamHandle` with two independent views: `textStream` (raw text deltas) and `events`
+  (full lifecycle: `attempt-start`, `delta`, `partial`, `attempt-failed`, `done`).
+- Incremental per-field validation (`partial` events) - for JSON/Zod object schemas, each
+  top-level field is validated the instant its own value closes in the stream, before the
+  whole object finishes.
+- Visible retries - a streaming attempt that fails validation emits `attempt-failed` and
+  starts a fresh `attempt-start`, since already-streamed tokens can't be un-sent.
+- `generateStream()` added to all four backends (openai, groq, anthropic, ollama), falling
+  back to one-shot `generate()` for a model without native streaming support.
 - `checkJsonSchema` exported from `core/validate.ts` for reuse by the incremental validator.
 
 ## [0.1.0] - 2026-06-30

@@ -4,7 +4,7 @@ import { toJsonSchema, buildStructuredPrompt } from "../core/schema.js";
 import { isZodSchema, isGbnfInput } from "../core/validate.js";
 import { parseAndValidate } from "../core/parse.js";
 
-export interface OpenAIBackendOptions {
+export interface FireworksBackendOptions {
   model?: string;
   apiKey?: string;
   baseURL?: string;
@@ -12,26 +12,33 @@ export interface OpenAIBackendOptions {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function responseFormatFor(schema: SchemaInput): any {
-  // GBNF output is a free-form string, not JSON — do NOT force json_object,
-  // it would corrupt the grammar-constrained output. Prompt-only (best-effort).
-  if (isGbnfInput(schema)) return undefined;
-  // Strict json_schema mode for Zod, non-strict for raw jsonSchema, json_object otherwise
+  // Fireworks' grammar mode applies a GBNF grammar as a genuine token-level
+  // constraint (not the prompt-only best-effort path other cloud backends fall
+  // back to for gbnf) - see https://docs.fireworks.ai/structured-responses/structured-output-grammar-based
+  if (isGbnfInput(schema)) return { type: "grammar", grammar: schema.gbnf };
   return isZodSchema(schema)
     ? {
         type: "json_schema" as const,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        json_schema: { name: "output", strict: true, schema: toJsonSchema(schema as z.ZodType<any>) },
+        json_schema: { name: "output", schema: toJsonSchema(schema as z.ZodType<any>) },
       }
     : "jsonSchema" in (schema as object)
       ? {
           type: "json_schema" as const,
-          json_schema: { name: "output", strict: false, schema: (schema as { jsonSchema: Record<string, unknown> }).jsonSchema },
+          json_schema: { name: "output", schema: (schema as { jsonSchema: Record<string, unknown> }).jsonSchema },
         }
       : { type: "json_object" as const };
 }
 
-export function openai(options: OpenAIBackendOptions = {}): ShapecraftModel {
-  const modelId = options.model ?? "gpt-4o-mini";
+/**
+ * Fireworks AI - OpenAI-compatible chat completions API, reached via the `openai`
+ * package pointed at Fireworks' base URL (same dependency `openai()` already uses,
+ * no new SDK needed). The differentiator over `openai()`/`groq()` is grammar mode:
+ * a `{ gbnf }` input gets `response_format: { type: "grammar", grammar }`, a real
+ * token-level constraint, not a prompted-and-checked best-effort string.
+ */
+export function fireworks(options: FireworksBackendOptions = {}): ShapecraftModel {
+  const modelId = options.model ?? "accounts/fireworks/models/llama-v3p1-70b-instruct";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function client(): Promise<any> {
@@ -40,19 +47,22 @@ export function openai(options: OpenAIBackendOptions = {}): ShapecraftModel {
       throw new Error("Install openai: npm install openai");
     });
     const OpenAI = mod.default ?? mod;
-    return new OpenAI({ apiKey: options.apiKey ?? process.env.OPENAI_API_KEY, baseURL: options.baseURL });
+    return new OpenAI({
+      apiKey: options.apiKey ?? process.env.FIREWORKS_API_KEY,
+      baseURL: options.baseURL ?? "https://api.fireworks.ai/inference/v1",
+    });
   }
 
   return {
-    id: `openai:${modelId}`,
+    id: `fireworks:${modelId}`,
     guaranteeLevel: "native",
     capabilities: { streaming: true, chat: true, structuredOutput: true, toolCalling: false, skillDispatch: true },
 
     async generate<T>(prompt: string, schema: SchemaInput<T>, systemPrompt?: string, callOptions?: ModelCallOptions): Promise<T> {
-      const openaiClient = await client();
+      const fireworksClient = await client();
       const { system, user } = buildStructuredPrompt(prompt, schema, systemPrompt);
 
-      const response = await openaiClient.chat.completions.create(
+      const response = await fireworksClient.chat.completions.create(
         {
           model: modelId,
           messages: [
@@ -70,9 +80,9 @@ export function openai(options: OpenAIBackendOptions = {}): ShapecraftModel {
     },
 
     async chat(messages: ChatMessage[], systemPrompt?: string): Promise<string> {
-      const openaiClient = await client();
+      const fireworksClient = await client();
 
-      const response = await openaiClient.chat.completions.create({
+      const response = await fireworksClient.chat.completions.create({
         model: modelId,
         messages: [
           ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []),
@@ -89,10 +99,10 @@ export function openai(options: OpenAIBackendOptions = {}): ShapecraftModel {
       systemPrompt?: string,
       callOptions?: ModelCallOptions
     ): AsyncIterable<string> {
-      const openaiClient = await client();
+      const fireworksClient = await client();
       const { system, user } = buildStructuredPrompt(prompt, schema, systemPrompt);
 
-      const stream = await openaiClient.chat.completions.create(
+      const stream = await fireworksClient.chat.completions.create(
         {
           model: modelId,
           messages: [

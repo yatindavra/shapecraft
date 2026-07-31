@@ -4,7 +4,7 @@ import { toJsonSchema, buildStructuredPrompt } from "../core/schema.js";
 import { isZodSchema, isGbnfInput } from "../core/validate.js";
 import { parseAndValidate } from "../core/parse.js";
 
-export interface OpenAIBackendOptions {
+export interface MistralBackendOptions {
   model?: string;
   apiKey?: string;
   baseURL?: string;
@@ -12,10 +12,10 @@ export interface OpenAIBackendOptions {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function responseFormatFor(schema: SchemaInput): any {
-  // GBNF output is a free-form string, not JSON — do NOT force json_object,
-  // it would corrupt the grammar-constrained output. Prompt-only (best-effort).
+  // Mistral has no grammar mode (unlike fireworks()) - a gbnf input is prompt-only,
+  // best-effort, same as openai()/groq(). Forcing json_schema mode here would fight
+  // the grammar's free-form string output.
   if (isGbnfInput(schema)) return undefined;
-  // Strict json_schema mode for Zod, non-strict for raw jsonSchema, json_object otherwise
   return isZodSchema(schema)
     ? {
         type: "json_schema" as const,
@@ -30,8 +30,15 @@ function responseFormatFor(schema: SchemaInput): any {
       : { type: "json_object" as const };
 }
 
-export function openai(options: OpenAIBackendOptions = {}): ShapecraftModel {
-  const modelId = options.model ?? "gpt-4o-mini";
+/**
+ * Mistral AI - OpenAI-compatible chat completions API, reached via the `openai`
+ * package pointed at Mistral's base URL (same dependency `openai()`/`fireworks()`
+ * already use, no new SDK needed). `guaranteeLevel: "native"` - `response_format:
+ * { type: "json_schema", ... }` is a server-side enforced schema, same tier as
+ * `openai()`/`groq()`/`fireworks()`.
+ */
+export function mistral(options: MistralBackendOptions = {}): ShapecraftModel {
+  const modelId = options.model ?? "mistral-large-latest";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function client(): Promise<any> {
@@ -40,19 +47,22 @@ export function openai(options: OpenAIBackendOptions = {}): ShapecraftModel {
       throw new Error("Install openai: npm install openai");
     });
     const OpenAI = mod.default ?? mod;
-    return new OpenAI({ apiKey: options.apiKey ?? process.env.OPENAI_API_KEY, baseURL: options.baseURL });
+    return new OpenAI({
+      apiKey: options.apiKey ?? process.env.MISTRAL_API_KEY,
+      baseURL: options.baseURL ?? "https://api.mistral.ai/v1",
+    });
   }
 
   return {
-    id: `openai:${modelId}`,
+    id: `mistral:${modelId}`,
     guaranteeLevel: "native",
     capabilities: { streaming: true, chat: true, structuredOutput: true, toolCalling: false, skillDispatch: true },
 
     async generate<T>(prompt: string, schema: SchemaInput<T>, systemPrompt?: string, callOptions?: ModelCallOptions): Promise<T> {
-      const openaiClient = await client();
+      const mistralClient = await client();
       const { system, user } = buildStructuredPrompt(prompt, schema, systemPrompt);
 
-      const response = await openaiClient.chat.completions.create(
+      const response = await mistralClient.chat.completions.create(
         {
           model: modelId,
           messages: [
@@ -66,13 +76,16 @@ export function openai(options: OpenAIBackendOptions = {}): ShapecraftModel {
 
       const raw: string = response.choices[0]?.message?.content ?? "";
 
-      return parseAndValidate<T>(raw, schema);
+      // Mistral sometimes wraps `json_schema`-mode output in a ```json fence despite
+      // response_format supposedly enforcing raw JSON - extractJson is a safe no-op
+      // when it doesn't (same pattern anthropic() uses for the same reason).
+      return parseAndValidate<T>(raw, schema, { extractJson: true });
     },
 
     async chat(messages: ChatMessage[], systemPrompt?: string): Promise<string> {
-      const openaiClient = await client();
+      const mistralClient = await client();
 
-      const response = await openaiClient.chat.completions.create({
+      const response = await mistralClient.chat.completions.create({
         model: modelId,
         messages: [
           ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []),
@@ -89,10 +102,10 @@ export function openai(options: OpenAIBackendOptions = {}): ShapecraftModel {
       systemPrompt?: string,
       callOptions?: ModelCallOptions
     ): AsyncIterable<string> {
-      const openaiClient = await client();
+      const mistralClient = await client();
       const { system, user } = buildStructuredPrompt(prompt, schema, systemPrompt);
 
-      const stream = await openaiClient.chat.completions.create(
+      const stream = await mistralClient.chat.completions.create(
         {
           model: modelId,
           messages: [

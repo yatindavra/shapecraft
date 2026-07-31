@@ -2,12 +2,21 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { SchemaInput, ValidatorInput } from "../types.js";
 import { buildXmlSystemPrompt } from "./xml.js";
-import { isXmlInput, isZodSchema } from "./validate.js";
+import { buildGbnfSystemPrompt } from "./gbnf.js";
+import { isXmlInput, isGbnfInput, isZodSchema } from "./validate.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function toJsonSchema(schema: z.ZodType<any>): Record<string, unknown> {
+  // jsonSchema7 (the default target), not openApi3 - openApi3 emits the old OpenAPI
+  // 3.0 boolean form for exclusive bounds (`.positive()`/`.negative()`/`.gt()`/`.lt()`)
+  // - exclusiveMinimum: true + a separate minimum - instead of the numeric form real
+  // JSON Schema requires (exclusiveMinimum: 0). Backends that validate the schema
+  // itself strictly (confirmed on Mistral, likely Fireworks too) reject the boolean
+  // form outright with a 422 before the model ever runs.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return zodToJsonSchema(schema as any, { target: "openApi3" }) as Record<string, unknown>;
+  const result = zodToJsonSchema(schema as any, { target: "jsonSchema7" }) as Record<string, unknown>;
+  delete result.$schema;
+  return result;
 }
 
 export function buildStructuredPrompt(
@@ -23,6 +32,8 @@ export function buildStructuredPrompt(
     schemaInfo = `Respond with valid JSON matching this schema exactly:\n\n${JSON.stringify(schema.jsonSchema, null, 2)}`;
   } else if ("pattern" in schema) {
     schemaInfo = `Respond with a plain string matching this pattern: ${schema.pattern}`;
+  } else if (isGbnfInput(schema)) {
+    schemaInfo = buildGbnfSystemPrompt(schema);
   } else if (isXmlInput(schema)) {
     schemaInfo = buildXmlSystemPrompt(schema);
   } else if ("validate" in schema && (schema as ValidatorInput).hint) {

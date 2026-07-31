@@ -4,7 +4,7 @@ import { toJsonSchema, buildStructuredPrompt } from "../core/schema.js";
 import { isZodSchema, isGbnfInput } from "../core/validate.js";
 import { parseAndValidate } from "../core/parse.js";
 
-export interface OpenAIBackendOptions {
+export interface OpenRouterBackendOptions {
   model?: string;
   apiKey?: string;
   baseURL?: string;
@@ -12,10 +12,10 @@ export interface OpenAIBackendOptions {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function responseFormatFor(schema: SchemaInput): any {
-  // GBNF output is a free-form string, not JSON — do NOT force json_object,
-  // it would corrupt the grammar-constrained output. Prompt-only (best-effort).
+  // No grammar mode - OpenRouter is pass-through across many different underlying
+  // providers, so there's no single grammar API to target. A gbnf input is
+  // prompt-only, best-effort, same as openai()/groq()/mistral().
   if (isGbnfInput(schema)) return undefined;
-  // Strict json_schema mode for Zod, non-strict for raw jsonSchema, json_object otherwise
   return isZodSchema(schema)
     ? {
         type: "json_schema" as const,
@@ -30,8 +30,20 @@ function responseFormatFor(schema: SchemaInput): any {
       : { type: "json_object" as const };
 }
 
-export function openai(options: OpenAIBackendOptions = {}): ShapecraftModel {
-  const modelId = options.model ?? "gpt-4o-mini";
+/**
+ * OpenRouter - OpenAI-compatible chat completions API, reached via the `openai`
+ * package pointed at OpenRouter's base URL (same dependency `openai()`/`fireworks()`/
+ * `mistral()` already use, no new SDK needed). `guaranteeLevel: "best-effort"`,
+ * deliberately not `"native"` like the other cloud backends - OpenRouter is
+ * pass-through across many different underlying providers/models, and
+ * `response_format: { type: "json_schema" }` enforcement isn't guaranteed for every
+ * model it can route to, only the ones that actually support it themselves. Defensively
+ * requests `extractJson: true` on every call for the same reason `anthropic()` needs
+ * it - an arbitrary underlying model may wrap output in a markdown fence regardless of
+ * what `response_format` asked for.
+ */
+export function openRouter(options: OpenRouterBackendOptions = {}): ShapecraftModel {
+  const modelId = options.model ?? "openai/gpt-4o-mini";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function client(): Promise<any> {
@@ -40,19 +52,22 @@ export function openai(options: OpenAIBackendOptions = {}): ShapecraftModel {
       throw new Error("Install openai: npm install openai");
     });
     const OpenAI = mod.default ?? mod;
-    return new OpenAI({ apiKey: options.apiKey ?? process.env.OPENAI_API_KEY, baseURL: options.baseURL });
+    return new OpenAI({
+      apiKey: options.apiKey ?? process.env.OPENROUTER_API_KEY,
+      baseURL: options.baseURL ?? "https://openrouter.ai/api/v1",
+    });
   }
 
   return {
-    id: `openai:${modelId}`,
-    guaranteeLevel: "native",
+    id: `openrouter:${modelId}`,
+    guaranteeLevel: "best-effort",
     capabilities: { streaming: true, chat: true, structuredOutput: true, toolCalling: false, skillDispatch: true },
 
     async generate<T>(prompt: string, schema: SchemaInput<T>, systemPrompt?: string, callOptions?: ModelCallOptions): Promise<T> {
-      const openaiClient = await client();
+      const openRouterClient = await client();
       const { system, user } = buildStructuredPrompt(prompt, schema, systemPrompt);
 
-      const response = await openaiClient.chat.completions.create(
+      const response = await openRouterClient.chat.completions.create(
         {
           model: modelId,
           messages: [
@@ -66,13 +81,13 @@ export function openai(options: OpenAIBackendOptions = {}): ShapecraftModel {
 
       const raw: string = response.choices[0]?.message?.content ?? "";
 
-      return parseAndValidate<T>(raw, schema);
+      return parseAndValidate<T>(raw, schema, { extractJson: true });
     },
 
     async chat(messages: ChatMessage[], systemPrompt?: string): Promise<string> {
-      const openaiClient = await client();
+      const openRouterClient = await client();
 
-      const response = await openaiClient.chat.completions.create({
+      const response = await openRouterClient.chat.completions.create({
         model: modelId,
         messages: [
           ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []),
@@ -89,10 +104,10 @@ export function openai(options: OpenAIBackendOptions = {}): ShapecraftModel {
       systemPrompt?: string,
       callOptions?: ModelCallOptions
     ): AsyncIterable<string> {
-      const openaiClient = await client();
+      const openRouterClient = await client();
       const { system, user } = buildStructuredPrompt(prompt, schema, systemPrompt);
 
-      const stream = await openaiClient.chat.completions.create(
+      const stream = await openRouterClient.chat.completions.create(
         {
           model: modelId,
           messages: [

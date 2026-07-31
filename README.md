@@ -12,14 +12,16 @@ Structured output generation for LLMs in Node.js. Token-level constraints for lo
 
 ```bash
 npm install @aviasole/shapecraft zod
+# or: pnpm add @aviasole/shapecraft zod
 ```
 
 Install backend SDK as needed:
 
 ```bash
-npm install openai              # OpenAI
+npm install openai              # OpenAI, Fireworks, Mistral, OpenRouter, DeepSeek (all OpenAI-compatible)
 npm install groq-sdk            # Groq
 npm install @anthropic-ai/sdk   # Anthropic
+npm install @google/genai       # Gemini
 # Ollama: no extra SDK needed
 ```
 
@@ -226,22 +228,137 @@ console.log(result.data); // { name: "John Doe", age: 35 }
 > XML is prompt-driven on all backends (no token-level constraint), so a capable
 > model gives the most reliable output on deeply nested templates.
 
+### GBNF grammar
+
+Pass a raw [GBNF](https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md)
+(GGML BNF) grammar string. `result.data` is the **raw string** that conforms to the
+grammar — GBNF describes a string language, not a JSON shape, so it's never parsed.
+
+```typescript
+const result = await generate(model, {
+  gbnf: `
+    root  ::= year "-" month "-" day
+    year  ::= [0-9]{4}
+    month ::= [0-9]{2}
+    day   ::= [0-9]{2}
+  `,
+}, "When did WWII end in Europe?");
+
+console.log(result.data); // "1945-05-08"
+```
+
+**The guarantee is backend-dependent — this is the one input where that's true.** On
+`llamaCpp()` the grammar is enforced at the **token level**: the model literally cannot
+emit a token that breaks the grammar, so the output is valid *by construction*
+(`constrained`). On every other backend (`openai`, `groq`, `anthropic`, `ollama`) there
+is no grammar parameter, so the grammar is injected into the prompt (best-effort) and the
+returned string is validated against the grammar by a **bundled GBNF interpreter**, then
+retried on a mismatch.
+
+```typescript
+import { llamaCpp } from "@aviasole/shapecraft";
+
+const local = llamaCpp({ modelPath: "./models/llama-3.2-3b.gguf" }); // npm install node-llama-cpp
+const { data } = await generate(local, {
+  gbnf: `root ::= "positive" | "negative" | "neutral"`,
+}, "Sentiment of: 'I love this!'");
+// data: "positive" — constrained, cannot be anything else
+```
+
+#### What the interpreter enforces (and what it doesn't)
+
+The bundled interpreter is a deliberate **subset**, in the same spirit as `checkJsonSchema`
+(a useful subset of JSON Schema, not the whole spec). A malformed grammar, or one using an
+unsupported construct, throws **before the model is ever called** — a grammar bug, not
+something to retry.
+
+| GBNF construct | Supported |
+|---|---|
+| String literals, rule references, sequences | ✅ |
+| Alternation `\|`, grouping `( )` | ✅ |
+| Repetition `*` `+` `?` `{m}` `{m,}` `{m,n}` | ✅ |
+| Character classes `[a-z]` `[^0-9]`, ranges, escapes (`\n \t \" \xNN \uNNNN`) | ✅ |
+| `#` line comments | ✅ |
+| **Left-recursive rules** | ⚠️ not fully supported — validation may reject; never hangs |
+| **Deeply right-recursive rule *references*** (`list ::= item "," list \| item`) | ⚠️ has a real depth limit (see below) |
+| Nested/imported grammars, llama.cpp extensions | ❌ throws at parse time |
+
+The subset applies on **all** backends, including `llamaCpp()` (the JS validation still runs
+for pipeline uniformity). As always, the grammar constrains **shape, not truth** — a
+conforming string can still be a wrong answer (see
+[guarantees](#what-shapecraft-guarantees--and-what-it-doesnt)).
+
+**Stress-tested failure modes (what actually breaks, found by deliberately trying to break it):**
+
+- **Catastrophic/exponential backtracking — not reproducible.** The classic patterns that
+  blow up naive backtracking regex engines (e.g. `("a" "a"?)* "b"` against a long run of `a`
+  with no trailing `b`) resolve in milliseconds here, because the matcher dedupes by
+  *position reached*, not by path taken — it's closer to a bounded reachability search than
+  a naive backtracker.
+- **A genuinely adversarial grammar can still exceed the step budget** — a ~26-way
+  variable-length ambiguous alternation over a 300k-character input with an unmatchable
+  terminator trips it in well under a second, throwing a clear "step budget" error rather
+  than hanging. This is a real, if hard-to-reach, backstop — not just an untested code path.
+- **Deep right-recursion via a rule *reference* has a hard limit - this is a real gap, not
+  just theoretical.** `*` and `+` are matched iteratively (no recursion, no limit tested up to
+  50k+ repetitions). But a rule written as `list ::= item "," list | item` recurses through
+  the JS call stack once per repetition, so it is capped at **1000 nested references**. Past
+  that point `matchesGbnf` throws a clear, actionable error (*"GBNF grammar recursion is too
+  deep... prefer `*`/`+`"*) instead of a raw native stack-overflow trace. The cap is enforced
+  by the matcher itself, so the cutoff is the same number on every platform and Node version
+  rather than whatever the JS stack happens to allow. **If your grammar needs a long repeated
+  sequence, write it with `*`/`+`, not recursive rule references** - this is the one place
+  "conventionally right-recursive GBNF" needs a caveat.
+
 ## Backends & Guarantee Levels
 
 | Backend | Guarantee | Mechanism |
 |---|---|---|
 | `openai()` | `native` | Server-side strict JSON schema |
 | `groq()` | `native` | JSON mode |
-| `ollama()` | `constrained` | Token-level GBNF grammar |
+| `deepseek()` | `native` | JSON mode (no schema-strict mode, same tier as `groq()`) |
+| `fireworks()` | `native` | Server-side JSON schema mode, plus a real token-level GBNF grammar mode |
+| `mistral()` | `native` | Server-side JSON schema mode |
+| `gemini()` | `native` | Server-side JSON schema mode (`responseJsonSchema`) |
+| `ollama()` | `constrained` | Token-level JSON-schema constraint |
+| `llamaCpp()` | `constrained` | Token-level GBNF grammar (local `.gguf` via node-llama-cpp) |
 | `anthropic()` | `best-effort` | Prompt + parse + retry |
+| `openRouter()` | `best-effort` | Pass-through to many providers - `response_format` support varies by underlying model |
+
+> `llamaCpp()` is `constrained` for a `{ gbnf }` input (token-level). For other schema
+> types (Zod / jsonSchema / …) it currently runs a best-effort prompt path until the
+> JSON-Schema→GBNF converter lands — treat those as best-effort despite the nominal level.
+>
+> `fireworks()` is the one cloud backend where a `{ gbnf }` input is *not* downgraded to
+> best-effort — Fireworks' grammar mode (`response_format: { type: "grammar", grammar }`)
+> applies the GBNF grammar as a genuine token-level constraint server-side, the same
+> guarantee `llamaCpp()` gives locally. It reuses the `openai` package pointed at
+> Fireworks' base URL, so no extra SDK dependency is needed.
+>
+> `openRouter()` is deliberately `best-effort`, not `native` like the other cloud
+> backends — it's pass-through across many different underlying providers/models, and
+> `response_format: { type: "json_schema" }` enforcement isn't guaranteed for every model
+> it can route to, only the ones that actually support it themselves.
+>
+> `gemini()` uses the official `@google/genai` SDK, not an OpenAI-compatible endpoint
+> (unlike `fireworks()`/`mistral()`/`openRouter()`) — Gemini's OpenAI-compat layer is a
+> migration bridge for OpenAI users, not its primary integration path, and doesn't expose
+> `responseJsonSchema` (plain JSON Schema, what `toJsonSchema()` already produces) —
+> only the older `responseSchema` (Gemini's own Type-enum OpenAPI-subset shape).
 
 ```typescript
-import { openai, groq, ollama, anthropic } from "@aviasole/shapecraft";
+import { openai, groq, fireworks, mistral, gemini, openRouter, deepseek, ollama, anthropic, llamaCpp } from "@aviasole/shapecraft";
 
-const gpt    = openai({ model: "gpt-4o-mini" });
-const fast   = groq({ model: "llama-3.3-70b-versatile" });
-const local  = ollama({ model: "llama3.2" });
-const claude = anthropic({ model: "claude-haiku-4-5-20251001", maxRetries: 3 });
+const gpt       = openai({ model: "gpt-4o-mini" });
+const fast      = groq({ model: "llama-3.3-70b-versatile" });
+const cloudGbnf = fireworks({ model: "accounts/fireworks/models/llama-v3p1-70b-instruct" });
+const mist      = mistral({ model: "mistral-large-latest" });
+const gem       = gemini({ model: "gemini-flash-latest" });
+const router    = openRouter({ model: "openai/gpt-4o-mini" });
+const deep      = deepseek({ model: "deepseek-v4-flash" });
+const local     = ollama({ model: "llama3.2" });
+const native    = llamaCpp({ modelPath: "./models/llama-3.2-3b.gguf" });
+const claude    = anthropic({ model: "claude-haiku-4-5-20251001", maxRetries: 3 });
 ```
 
 ### Model Capabilities
@@ -250,7 +367,7 @@ Every built-in backend also exposes `capabilities` — an explicit, inspectable 
 
 ```typescript
 console.log(claude.capabilities);
-// { streaming: true, chat: true, structuredOutput: true, toolCalling: false }
+// { streaming: true, chat: true, structuredOutput: true, toolCalling: false, skillDispatch: true }
 ```
 
 ```typescript
@@ -259,6 +376,7 @@ interface ModelCapabilities {
   chat: boolean;            // has chat() - required for turnaround: true
   structuredOutput: boolean; // has generate() - always true
   toolCalling: boolean;     // not yet supported by any backend
+  skillDispatch: boolean;   // generateSkillCall()/runSkillLoop() - always true, built on generate()
 }
 ```
 
@@ -270,7 +388,7 @@ Other libraries solve overlapping parts of this problem well. This is what's act
 
 | Capability | Instructor-js | zod-gpt | Vercel AI SDK (`generateObject`) | shapecraft |
 |---|---|---|---|---|
-| Providers | OpenAI only | OpenAI, Anthropic | OpenAI, Anthropic, Google, and more | OpenAI, Groq, Anthropic, Ollama |
+| Providers | OpenAI only | OpenAI, Anthropic | OpenAI, Anthropic, Google, and more | OpenAI, Groq, Anthropic, Ollama, and many more |
 | Local model support | - | - | no grammar-level constraint | Ollama with token-level GBNF grammar |
 | Per-provider reliability signal | - | - | - | `guaranteeLevel`: `native` / `constrained` / `best-effort` |
 | Retry on schema failure | not documented | fixed 3 attempts, 60s timeout | configurable `maxRetries` | configurable, only on schema-validation failure |
@@ -508,10 +626,209 @@ const { data } = await generate(
 
 Five R4 resources are included: **`Patient`**, **`Observation`**, **`Condition`**, **`MedicationRequest`**, **`Encounter`**. Each models a practical common subset (not every field the spec allows) and enforces the required-bound value-set enums (`gender`, `status`, `intent`, …). Because they're JSON-object schemas, streaming `partial` events validate each top-level field as it arrives, for free.
 
+Every preset also accepts an optional `extension?: Extension[]` (FHIR's mechanism for custom/local fields not in the base spec):
+
+```typescript
+const { data } = await generate(model, fhir.Patient, "...", { /* ... */ });
+// data.extension: [{ url: "https://hospital-a.example.com/fhir/.../preferred-pharmacy", valueString: "Walgreens #4521" }]
+```
+
+`Extension` is a common-subset type too — `url` plus one of `valueString` / `valueInteger` / `valueBoolean` / `valueCodeableConcept` (real FHIR's `value[x]` has ~20 polymorphic variants; unsupported ones pass through unvalidated rather than being rejected, since `checkJsonSchema` has no `oneOf`).
+
 Two things worth knowing before you rely on them:
 
 - **`required` is opinionated, not FHIR cardinality.** FHIR marks almost nothing mandatory (a `Patient` with no name is technically valid FHIR). These presets require a *useful* minimum for extraction (e.g. `Patient` requires name + gender + birthDate). Where FHIR genuinely mandates a field (`Observation.status`/`code`, `MedicationRequest.status`/`intent`/`subject`), that's mirrored exactly.
-- **Structural, not clinical.** A preset guarantees the resource is well-formed and required-fields-complete. It does **not** verify terminology codes (LOINC/SNOMED/RxNorm membership is not checked — a `Coding` is validated as having `system`/`code` strings, not as a real code), date formats, choice-type polymorphism (each preset commits to one `value[x]`/`medication[x]` variant), or any clinical invariant. **A structurally-valid FHIR resource is not the same as a correct or safe-to-act-on one** — see the guarantees note directly below.
+- **Structural, not clinical.** A preset guarantees the resource is well-formed and required-fields-complete. It does **not** verify terminology codes (LOINC/SNOMED/RxNorm membership is not checked — a `Coding` is validated as having `system`/`code` strings, not as a real code), date formats, choice-type polymorphism (each preset commits to one `medication[x]` variant, and `Extension` covers only its four most common `value[x]` variants), or any clinical invariant. **A structurally-valid FHIR resource is not the same as a correct or safe-to-act-on one** — see the guarantees note directly below.
+
+## Skill-Based Generation
+
+Let the model pick which of several typed operations to run, with validated arguments — instead of always extracting one fixed shape. Register a set of skills (name, Zod input schema, handler function), and `generateSkillCall()` dispatches to the right one:
+
+```typescript
+import { z } from "zod";
+import { SkillRegistry, generateSkillCall, runSkill } from "@aviasole/shapecraft";
+
+const registry = new SkillRegistry();
+
+registry.register({
+  name: "lookupOrder",
+  description: "Look up an order's status by its order ID",
+  inputSchema: z.object({ orderId: z.string() }),
+  handler: async ({ orderId }) => db.orders.findById(orderId),
+});
+
+registry.register({
+  name: "sendRefund",
+  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
+  handler: async ({ orderId, amount }) => paymentsApi.refund(orderId, amount),
+});
+
+const call = await generateSkillCall(model, registry, "What's the status of order #4521?");
+// { skill: "lookupOrder", args: { orderId: "4521" } }
+
+const result = await runSkill(registry, call);
+```
+
+`generateSkillCall()` is a thin wrapper around `generate()` — it builds a `z.discriminatedUnion` over every registered skill's `inputSchema` and dispatches through the same retry loop, so `guaranteeLevel` semantics (native/constrained/best-effort) apply per backend exactly like any other call. This is deliberately **not** built on OpenAI/Anthropic's native tool-calling APIs — those don't exist on Ollama or `llamaCpp()` at all, so schema-based dispatch is what makes tool use work identically across every backend, local models included.
+
+v1 skill schemas are **Zod only** — that's the mechanism that makes the discriminated-union dispatch work with zero new validation code.
+
+### Looping toward a goal
+
+`runSkillLoop()` repeatedly picks and runs a skill, feeding each result back as context, until a skill marked `terminal: true` succeeds or `maxTurns` is hit:
+
+```typescript
+import { runSkillLoop, MaxSkillTurnsExceededError } from "@aviasole/shapecraft";
+
+registry.register({
+  name: "sendRefund",
+  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
+  handler: async ({ orderId, amount }) => paymentsApi.refund(orderId, amount),
+  terminal: true, // running this successfully ends the loop
+});
+
+try {
+  const { result, memory } = await runSkillLoop(model, registry, "Refund order #4521");
+  console.log(result); // whatever the terminal skill's handler returned
+} catch (err) {
+  if (err instanceof MaxSkillTurnsExceededError) {
+    // err.memory is JSON-serializable — persist it and call runSkillLoop() again
+    // with a fresh maxTurns budget (and { memory: err.memory }) to continue.
+  }
+}
+```
+
+A handler that throws — including the terminal skill's own handler — doesn't abort the loop. It's recorded as an error turn and fed back to the model, which can adapt (different arguments, a different skill, or try again) on the next turn. The loop only ever exits early via a thrown `MaxSkillTurnsExceededError`; a successful terminal-skill call is the only path to `{ status: "complete" }`.
+
+## Skill-Based Generation
+
+Let the model pick which of several typed operations to run, with validated arguments — instead of always extracting one fixed shape. Register a set of skills (name, Zod input schema, handler function), and `generateSkillCall()` dispatches to the right one:
+
+```typescript
+import { z } from "zod";
+import { SkillRegistry, generateSkillCall, runSkill } from "@aviasole/shapecraft";
+
+const registry = new SkillRegistry();
+
+registry.register({
+  name: "lookupOrder",
+  description: "Look up an order's status by its order ID",
+  inputSchema: z.object({ orderId: z.string() }),
+  handler: async ({ orderId }) => db.orders.findById(orderId),
+});
+
+registry.register({
+  name: "sendRefund",
+  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
+  handler: async ({ orderId, amount }) => paymentsApi.refund(orderId, amount),
+});
+
+const call = await generateSkillCall(model, registry, "What's the status of order #4521?");
+// { skill: "lookupOrder", args: { orderId: "4521" } }
+
+const result = await runSkill(registry, call);
+```
+
+`generateSkillCall()` is a thin wrapper around `generate()` — it builds a `z.discriminatedUnion` over every registered skill's `inputSchema` and dispatches through the same retry loop, so `guaranteeLevel` semantics (native/constrained/best-effort) apply per backend exactly like any other call. This is deliberately **not** built on OpenAI/Anthropic's native tool-calling APIs — those don't exist on Ollama or `llamaCpp()` at all, so schema-based dispatch is what makes tool use work identically across every backend, local models included.
+
+v1 skill schemas are **Zod only** — that's the mechanism that makes the discriminated-union dispatch work with zero new validation code.
+
+### Looping toward a goal
+
+`runSkillLoop()` repeatedly picks and runs a skill, feeding each result back as context, until a skill marked `terminal: true` succeeds or `maxTurns` is hit:
+
+```typescript
+import { runSkillLoop, MaxSkillTurnsExceededError } from "@aviasole/shapecraft";
+
+registry.register({
+  name: "sendRefund",
+  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
+  handler: async ({ orderId, amount }) => paymentsApi.refund(orderId, amount),
+  terminal: true, // running this successfully ends the loop
+});
+
+try {
+  const { result, memory } = await runSkillLoop(model, registry, "Refund order #4521");
+  console.log(result); // whatever the terminal skill's handler returned
+} catch (err) {
+  if (err instanceof MaxSkillTurnsExceededError) {
+    // err.memory is JSON-serializable — persist it and call runSkillLoop() again
+    // with a fresh maxTurns budget (and { memory: err.memory }) to continue.
+  }
+}
+```
+
+A handler that throws — including the terminal skill's own handler — doesn't abort the loop. It's recorded as an error turn and fed back to the model, which can adapt (different arguments, a different skill, or try again) on the next turn. The loop only ever exits early via a thrown `MaxSkillTurnsExceededError`; a successful terminal-skill call is the only path to `{ status: "complete" }`.
+
+## Skill-Based Generation
+
+Let the model pick which of several typed operations to run, with validated arguments — instead of always extracting one fixed shape. Register a set of skills (name, Zod input schema, handler function), and `generateSkillCall()` dispatches to the right one:
+
+```typescript
+import { z } from "zod";
+import { SkillRegistry, generateSkillCall, runSkill } from "@aviasole/shapecraft";
+
+const registry = new SkillRegistry();
+
+registry.register({
+  name: "lookupOrder",
+  description: "Look up an order's status by its order ID",
+  inputSchema: z.object({ orderId: z.string() }),
+  handler: async ({ orderId }) => db.orders.findById(orderId),
+});
+
+registry.register({
+  name: "sendRefund",
+  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
+  handler: async ({ orderId, amount }) => paymentsApi.refund(orderId, amount),
+});
+
+const call = await generateSkillCall(model, registry, "What's the status of order #4521?");
+// { skill: "lookupOrder", args: { orderId: "4521" } }
+
+const result = await runSkill(registry, call);
+```
+
+`generateSkillCall()` is a thin wrapper around `generate()` — it builds a `z.discriminatedUnion` over every registered skill's `inputSchema` and dispatches through the same retry loop, so `guaranteeLevel` semantics (native/constrained/best-effort) apply per backend exactly like any other call. This is deliberately **not** built on OpenAI/Anthropic's native tool-calling APIs — those don't exist on Ollama or `llamaCpp()` at all, so schema-based dispatch is what makes tool use work identically across every backend, local models included.
+
+v1 skill schemas are **Zod only** — that's the mechanism that makes the discriminated-union dispatch work with zero new validation code.
+
+### Looping toward a goal
+
+`runSkillLoop()` repeatedly picks and runs a skill, feeding each result back as context, until a skill marked `terminal: true` succeeds or `maxTurns` is hit:
+
+```typescript
+import { runSkillLoop, MaxSkillTurnsExceededError } from "@aviasole/shapecraft";
+
+registry.register({
+  name: "sendRefund",
+  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
+  handler: async ({ orderId, amount }) => paymentsApi.refund(orderId, amount),
+  terminal: true, // running this successfully ends the loop
+});
+
+try {
+  const { result, memory } = await runSkillLoop(model, registry, "Refund order #4521");
+  console.log(result); // whatever the terminal skill's handler returned
+} catch (err) {
+  if (err instanceof MaxSkillTurnsExceededError) {
+    // err.memory is JSON-serializable — persist it and call runSkillLoop() again
+    // with a fresh maxTurns budget (and { memory: err.memory }) to continue.
+  }
+}
+```
+
+A handler that throws — including the terminal skill's own handler — doesn't abort the loop. It's recorded as an error turn and fed back to the model, which can adapt (different arguments, a different skill, or try again) on the next turn. The loop only ever exits early via a thrown `MaxSkillTurnsExceededError`; a successful terminal-skill call is the only path to `{ status: "complete" }`.
+
+## CLI
+
+Validate an already-produced JSON file against a raw JSON Schema file, without writing any code:
+
+```bash
+npx shapecraft validate --schema schema.json --output output.json
+```
+
+`schema.json` is a raw JSON Schema (the same shape as the `{ jsonSchema }` `SchemaInput`), `output.json` is the data to check against it. Runs the same `checkJsonSchema` structural check `generate()` uses internally — `required` fields must be present and non-empty, `type`/`enum` must match, nested `properties`/`items` are checked recursively. Exits `0` and prints `✓ ... matches ...` on success; exits `1` and prints the specific violation (e.g. `Missing required property: "age"`) on failure. Useful in CI to check a fixture or a recorded model output against a schema without spinning up a full `generate()` call.
 
 ## Multi-agent orchestration
 
