@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { z } from "zod";
 import { generateWithTools } from "../src/core/tools.js";
 import { openai } from "../src/backends/openai.js";
@@ -6,8 +6,9 @@ import { groq } from "../src/backends/groq.js";
 import { anthropic } from "../src/backends/anthropic.js";
 import { ollama } from "../src/backends/ollama.js";
 import { mistral } from "../src/backends/mistral.js";
+import { gemini } from "../src/backends/gemini.js";
 import { MaxToolTurnsExceededError, ToolExecutionError } from "../src/types.js";
-import type { ShapecraftModel, ToolCallResponse, ToolDefinition } from "../src/types.js";
+import type { ChatMessage, ShapecraftModel, ToolCallResponse, ToolDefinition } from "../src/types.js";
 
 /** Scripted tool-calling model: one `ToolCallResponse` per `toolCall()` call, in order. `extractResult` backs the final `generate()` extraction pass. */
 function mockToolModel(toolCallScript: ToolCallResponse[], extractResult: unknown): ShapecraftModel {
@@ -162,6 +163,7 @@ const hasGroq = !!process.env.GROQ_API_KEY;
 const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
 const hasOllama = !!process.env.OLLAMA_MODEL;
 const hasMistral = !!process.env.MISTRAL_API_KEY;
+const hasGemini = !!process.env.GEMINI_API_KEY;
 
 const getWeatherTool: ToolDefinition = {
   name: "get_weather",
@@ -216,4 +218,131 @@ describe("generateWithTools - Mistral backend (real API)", () => {
   it.skipIf(!hasMistral)("calls get_weather then answers", async () => {
     await realWeatherCheck(mistral({ model: "mistral-small-latest" }));
   }, 30_000);
+});
+
+// The live counterpart to the stubbed shape assertions below: gemini() is the
+// only backend whose tool turn is built from functionCall/functionResponse
+// Parts, so it is worth exercising against the real API, not just a stub.
+describe("generateWithTools - Gemini backend (real API)", () => {
+  it.skipIf(!hasGemini)("calls get_weather then answers", async () => {
+    await realWeatherCheck(gemini({ model: "gemini-flash-latest" }));
+  }, 60_000);
+});
+
+// gemini() is the one backend that can't reuse openAiCompatibleToolCall() - it
+// has to rebuild the transcript as functionCall/functionResponse Parts. That
+// conversion is the part most likely to break and can't be reached by any live
+// test while the key is quota-blocked, so it is asserted directly against a
+// stubbed @google/genai client.
+describe("gemini() toolCall - request shape", () => {
+  afterEach(() => vi.resetModules());
+
+  async function captureGeminiRequest(scriptedResponse: Record<string, unknown>, messages: ChatMessage[]) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let captured: any;
+    vi.doMock("@google/genai", () => ({
+      GoogleGenAI: class {
+        models = {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          generateContent: async (req: any) => {
+            captured = req;
+            return scriptedResponse;
+          },
+        };
+      },
+    }));
+
+    const { gemini } = await import("../src/backends/gemini.js");
+    const model = gemini({ model: "gemini-flash-latest", apiKey: "test-key" });
+    const reply = await model.toolCall!(messages, [getWeatherTool], "be terse");
+    return { captured, reply };
+  }
+
+  it("sends parametersJsonSchema (plain JSON Schema), not Gemini's Type-enum shape", async () => {
+    const { captured } = await captureGeminiRequest({ text: "done", functionCalls: undefined }, [{ role: "user", content: "weather in Lisbon?" }]);
+
+    const decl = captured.config.tools[0].functionDeclarations[0];
+    expect(decl.name).toBe("get_weather");
+    expect(decl.parametersJsonSchema).toMatchObject({ type: "object", properties: { city: { type: "string" } } });
+    // `parameters` is mutually exclusive with parametersJsonSchema in the SDK.
+    expect(decl.parameters).toBeUndefined();
+    expect(captured.config.systemInstruction).toBe("be terse");
+  });
+
+  it("synthesizes an id when Gemini omits one, since generateWithTools correlates by it", async () => {
+    const { reply } = await captureGeminiRequest({ text: "", functionCalls: [{ name: "get_weather", args: { city: "Lisbon" } }] }, [
+      { role: "user", content: "weather in Lisbon?" },
+    ]);
+
+    expect(reply.toolCalls).toHaveLength(1);
+    expect(reply.toolCalls![0].id).toBeTruthy();
+    expect(reply.toolCalls![0]).toMatchObject({ name: "get_weather", args: { city: "Lisbon" } });
+  });
+
+  it("rebuilds a tool result as a functionResponse Part carrying the function name", async () => {
+    const { captured } = await captureGeminiRequest({ text: "18C", functionCalls: undefined }, [
+      { role: "user", content: "weather in Lisbon?" },
+      { role: "assistant", content: "", toolCalls: [{ id: "call-1", name: "get_weather", args: { city: "Lisbon" } }] },
+      { role: "tool", content: JSON.stringify({ tempC: 18 }), toolCallId: "call-1" },
+    ]);
+
+    expect(captured.contents[1]).toEqual({ role: "model", parts: [{ functionCall: { name: "get_weather", args: { city: "Lisbon" } } }] });
+    // The name is recovered from the assistant turn - a "tool" ChatMessage only
+    // carries toolCallId, but Gemini's functionResponse Part requires the name.
+    expect(captured.contents[2]).toEqual({ role: "user", parts: [{ functionResponse: { name: "get_weather", response: { tempC: 18 } } }] });
+  });
+
+  // Regression: Gemini 400s with "Function call is missing a thought_signature"
+  // if a replayed functionCall Part loses the opaque token it came back with.
+  // The signature has no home on the shared ToolCall type, so the backend keeps
+  // it per instance and reattaches it on the next turn.
+  it("round-trips thoughtSignature back onto the replayed functionCall Part", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const seen: any[] = [];
+    vi.doMock("@google/genai", () => ({
+      GoogleGenAI: class {
+        models = {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          generateContent: async (req: any) => {
+            seen.push(req);
+            if (seen.length === 1) {
+              return {
+                text: "",
+                candidates: [
+                  { content: { parts: [{ functionCall: { id: "fc-1", name: "get_weather", args: { city: "Lisbon" } }, thoughtSignature: "SIG-ABC" }] } },
+                ],
+              };
+            }
+            return { text: "18C in Lisbon", candidates: [{ content: { parts: [{ text: "18C in Lisbon" }] } }] };
+          },
+        };
+      },
+    }));
+
+    const { gemini } = await import("../src/backends/gemini.js");
+    const model = gemini({ model: "gemini-flash-latest", apiKey: "test-key" });
+
+    const first = await model.toolCall!([{ role: "user", content: "weather?" }], [getWeatherTool]);
+    expect(first.toolCalls![0].id).toBe("fc-1");
+
+    await model.toolCall!(
+      [
+        { role: "user", content: "weather?" },
+        { role: "assistant", content: "", toolCalls: first.toolCalls },
+        { role: "tool", content: JSON.stringify({ tempC: 18 }), toolCallId: "fc-1" },
+      ],
+      [getWeatherTool]
+    );
+
+    expect(seen[1].contents[1].parts[0].thoughtSignature).toBe("SIG-ABC");
+  });
+
+  it("wraps a non-object tool result, which Gemini's response field rejects", async () => {
+    const { captured } = await captureGeminiRequest({ text: "ok", functionCalls: undefined }, [
+      { role: "assistant", content: "", toolCalls: [{ id: "call-1", name: "get_weather", args: {} }] },
+      { role: "tool", content: JSON.stringify([1, 2, 3]), toolCallId: "call-1" },
+    ]);
+
+    expect(captured.contents[1].parts[0].functionResponse.response).toEqual({ result: [1, 2, 3] });
+  });
 });

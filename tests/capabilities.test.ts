@@ -10,15 +10,15 @@ import { mistral } from "../src/backends/mistral.js";
 import { openRouter } from "../src/backends/openRouter.js";
 import { gemini } from "../src/backends/gemini.js";
 import { deepseek } from "../src/backends/deepseek.js";
+import { llamaCpp } from "../src/backends/llamaCpp.js";
 import { mockModel } from "./helpers/index.js";
 
 const PersonSchema = z.object({ name: z.string(), age: z.number() });
 
 describe("ShapecraftModel.capabilities", () => {
-  // Split by toolCalling. Every backend on the OpenAI wire format shares the
-  // openAiCompatibleToolCall() helper; anthropic and ollama have their own
-  // native implementations. gemini is the lone holdout - it goes through
-  // @google/genai, not an OpenAI-shaped chat/completions endpoint.
+  // Every cloud backend now implements toolCall(): the OpenAI-wire-format ones
+  // share openAiCompatibleToolCall(), while anthropic, ollama and gemini each
+  // have their own. llamaCpp is the sole exception, asserted separately below.
   it.each([
     ["openai", openai({ model: "gpt-4o-mini" })],
     ["groq", groq({ model: "llama-3.3-70b-versatile" })],
@@ -28,6 +28,7 @@ describe("ShapecraftModel.capabilities", () => {
     ["mistral", mistral({ model: "mistral-large-latest" })],
     ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
     ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
+    ["gemini", gemini({ model: "gemini-flash-latest" })],
   ])("%s exposes streaming/chat/structuredOutput/skillDispatch/toolCalling true", (_name, model) => {
     expect(model.capabilities).toEqual({
       streaming: true,
@@ -38,18 +39,72 @@ describe("ShapecraftModel.capabilities", () => {
     });
   });
 
-  it.each([["gemini", gemini({ model: "gemini-flash-latest" })]])(
-    "%s exposes streaming/chat/structuredOutput/skillDispatch true, toolCalling false",
-    (_name, model) => {
-      expect(model.capabilities).toEqual({
-        streaming: true,
-        chat: true,
-        structuredOutput: true,
-        toolCalling: false,
-        skillDispatch: true,
-      });
-    }
-  );
+  it("llamaCpp reports streaming/toolCalling false - no delta iterator, no tools API", () => {
+    expect(llamaCpp({ modelPath: "/nonexistent/model.gguf" }).capabilities).toEqual({
+      streaming: false,
+      chat: true,
+      structuredOutput: true,
+      toolCalling: false,
+      skillDispatch: true,
+    });
+  });
+
+  // Guards the invariant that used to drift: a backend advertising toolCalling
+  // must actually implement toolCall(), and one that doesn't must not claim it.
+  // This is what let fireworks/mistral/openRouter/deepseek sit at `false` while
+  // the OpenAI-compatible helper they could reuse already existed.
+  it.each([
+    ["openai", openai({ model: "gpt-4o-mini" })],
+    ["groq", groq({ model: "llama-3.3-70b-versatile" })],
+    ["anthropic", anthropic({ model: "claude-haiku-4-5-20251001" })],
+    ["ollama", ollama({ model: "llama3.2" })],
+    ["fireworks", fireworks({ model: "accounts/fireworks/models/llama-v3p1-70b-instruct" })],
+    ["mistral", mistral({ model: "mistral-large-latest" })],
+    ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
+    ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
+    ["gemini", gemini({ model: "gemini-flash-latest" })],
+    ["llamaCpp", llamaCpp({ modelPath: "/nonexistent/model.gguf" })],
+  ])("%s: capabilities.toolCalling matches whether toolCall() actually exists", (_name, model) => {
+    expect(model.capabilities?.toolCalling).toBe(typeof model.toolCall === "function");
+  });
+
+  it.each([
+    ["openai", openai({ model: "gpt-4o-mini" })],
+    ["groq", groq({ model: "llama-3.3-70b-versatile" })],
+    ["anthropic", anthropic({ model: "claude-haiku-4-5-20251001" })],
+    ["ollama", ollama({ model: "llama3.2" })],
+    ["fireworks", fireworks({ model: "accounts/fireworks/models/llama-v3p1-70b-instruct" })],
+    ["mistral", mistral({ model: "mistral-large-latest" })],
+    ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
+    ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
+    ["gemini", gemini({ model: "gemini-flash-latest" })],
+    ["llamaCpp", llamaCpp({ modelPath: "/nonexistent/model.gguf" })],
+  ])("%s: capabilities.streaming matches whether generateStream() actually exists", (_name, model) => {
+    expect(model.capabilities?.streaming).toBe(typeof model.generateStream === "function");
+  });
+
+  // Every backend must declare capabilities at all - llamaCpp shipped without
+  // one, so `model.capabilities` was undefined there while every other backend
+  // returned an object.
+  it.each([
+    ["openai", openai({ model: "gpt-4o-mini" })],
+    ["groq", groq({ model: "llama-3.3-70b-versatile" })],
+    ["anthropic", anthropic({ model: "claude-haiku-4-5-20251001" })],
+    ["ollama", ollama({ model: "llama3.2" })],
+    ["fireworks", fireworks({ model: "accounts/fireworks/models/llama-v3p1-70b-instruct" })],
+    ["mistral", mistral({ model: "mistral-large-latest" })],
+    ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
+    ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
+    ["gemini", gemini({ model: "gemini-flash-latest" })],
+    ["llamaCpp", llamaCpp({ modelPath: "/nonexistent/model.gguf" })],
+  ])("%s: declares capabilities, chat() and generate()", (_name, model) => {
+    expect(model.capabilities).toBeDefined();
+    expect(typeof model.generate).toBe("function");
+    expect(typeof model.chat).toBe("function");
+    expect(model.capabilities?.chat).toBe(true);
+    expect(model.capabilities?.skillDispatch).toBe(true);
+    expect(model.id).toBeTruthy();
+  });
 
   it.each([
     ["openai", openai({ model: "gpt-4o-mini" })],

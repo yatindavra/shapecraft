@@ -19,13 +19,30 @@
   - `ToolDefinition.parameters` accepts Zod or `{ jsonSchema }` only. `pattern`/`validate`/
     `xml` have no sensible named-parameters representation and throw clearly instead of
     silently producing a broken tool definition.
-  - Available on 8 of 9 backends: `openai()`, `groq()`, `fireworks()`, `mistral()`,
-    `openRouter()` and `deepseek()` share one `openAiCompatibleToolCall()` implementation
-    (identical wire format); `anthropic()` and `ollama()` have their own. `gemini()` is
-    the exception - it goes through `@google/genai` rather than an OpenAI-shaped
-    chat/completions endpoint. `ModelCapabilities.toolCalling` reports this per backend.
-  - Live-verified against Groq, Anthropic and Mistral. The other OpenAI-compatible
-    backends take the identical code path but had no usable credentials to test against.
+  - Available on every backend except `llamaCpp()` (local GGUF inference exposes no
+    tools API). `openai()`, `groq()`, `fireworks()`, `mistral()`, `openRouter()` and
+    `deepseek()` share one `openAiCompatibleToolCall()` implementation (identical wire
+    format); `anthropic()`, `ollama()` and `gemini()` each have their own.
+    `ModelCapabilities.toolCalling` reports this per backend - check the flag rather
+    than hardcoding the list.
+  - `gemini()` needs its own path: `@google/genai` models a tool turn as
+    `functionCall`/`functionResponse` Parts inside `contents` rather than OpenAI's flat
+    `tool_calls` array, uses `parametersJsonSchema` (plain JSON Schema) over the older
+    Type-enum `parameters`, and rejects a replayed `functionCall` Part that has lost its
+    opaque `thoughtSignature`. That token has no home on the shared `ToolCall` type, so
+    the backend keeps it per model instance and reattaches it on the next turn.
+  - Live-verified against Groq, Anthropic, Mistral and Gemini. `fireworks()`,
+    `openRouter()` and `deepseek()` take the identical OpenAI-compatible code path but
+    had no usable credentials to test against.
+
+### Fixed
+
+- **`llamaCpp()` declared no `capabilities` object at all** - the only backend that
+  didn't, so `model.capabilities` was `undefined` there while every other backend
+  returned one. It now reports `streaming: false`/`toolCalling: false` explicitly
+  (no token-delta iterator, no tools API) rather than saying nothing.
+- `ModelCapabilities.toolCalling`'s doc comment still read "Not yet built by any
+  backend", which shipped to consumers in the generated `.d.ts`.
 
 ### Fixed
 

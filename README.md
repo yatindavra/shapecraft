@@ -800,7 +800,7 @@ What this does and doesn't guarantee:
 - **A tool handler's own correctness is entirely your responsibility.** shapecraft only guarantees the handler's *return value* gets fed back to the model as-is.
 - **No loop-prevention beyond `maxTurns`** (default 10) - a model that keeps requesting tools forever throws `MaxToolTurnsExceededError`. A handler that throws aborts immediately with `ToolExecutionError` instead (a business-logic failure, never retried the way a bad argument is - re-prompting the model can't fix a broken handler).
 
-Available on `openai()`, `groq()`, `anthropic()`, `ollama()`, `fireworks()`, `mistral()`, `openRouter()` and `deepseek()`. Not on `gemini()` (routed through `@google/genai`, not an OpenAI-shaped chat/completions endpoint) or `llamaCpp()` (local GGUF inference, no tools API). Check `model.capabilities.toolCalling` rather than hardcoding that list. Non-streaming in v1, same reasoning `runAgents()` gives for skipping streaming.
+Available on every cloud backend: `openai()`, `groq()`, `anthropic()`, `ollama()`, `fireworks()`, `mistral()`, `openRouter()`, `deepseek()` and `gemini()`. The only exception is `llamaCpp()` - local GGUF inference exposes no tools API. Check `model.capabilities.toolCalling` rather than hardcoding that list. Non-streaming in v1, same reasoning `runAgents()` gives for skipping streaming.
 
 ## What shapecraft guarantees — and what it doesn't
 
