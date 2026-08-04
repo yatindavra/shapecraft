@@ -1,7 +1,8 @@
-import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel } from "../types.js";
+import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel, ToolCallResponse, ToolDefinition } from "../types.js";
 import { buildStructuredPrompt } from "../core/schema.js";
 import { parseAndValidate } from "../core/parse.js";
 import { isXmlInput, isGbnfInput } from "../core/validate.js";
+import { openAiCompatibleToolCall } from "../core/tools.js";
 
 function wantsJsonMode(schema: SchemaInput): boolean {
   // XML and GBNF output free-form strings, not JSON — Groq rejects json_object
@@ -30,7 +31,7 @@ export function groq(options: GroqBackendOptions = {}): ShapecraftModel {
   return {
     id: `groq:${modelId}`,
     guaranteeLevel: "native",
-    capabilities: { streaming: true, chat: true, structuredOutput: true, toolCalling: false, skillDispatch: true },
+    capabilities: { streaming: true, chat: true, structuredOutput: true, toolCalling: true, skillDispatch: true },
 
     async generate<T>(prompt: string, schema: SchemaInput<T>, systemPrompt?: string, callOptions?: ModelCallOptions): Promise<T> {
       const groqClient = await client();
@@ -95,6 +96,10 @@ export function groq(options: GroqBackendOptions = {}): ShapecraftModel {
         const delta = chunk.choices?.[0]?.delta?.content;
         if (delta) yield delta;
       }
+    },
+
+    async toolCall(messages: ChatMessage[], tools: ToolDefinition[], systemPrompt?: string): Promise<ToolCallResponse> {
+      return openAiCompatibleToolCall(await client(), modelId, messages, tools, systemPrompt);
     },
   };
 }

@@ -1,5 +1,56 @@
 # Changelog
 
+## [2.8.0] - 2026-07-31
+
+### Added
+
+- **Native tool/function-calling** - `generateWithTools(model, tools, schema, prompt, options?)`.
+  Passes the running message history plus your tool definitions to the model's own
+  `toolCall()` turn, executes requested tools locally (validating each call's arguments
+  against that tool's `parameters` schema first), feeds results back, and repeats until
+  the model stops asking for tools. The final answer is extracted through an ordinary
+  `generate()` call over the transcript, so the structured-output guarantee is identical
+  to any standalone `generate()` - not a weaker tool-calling-specific check.
+  - A bad tool call (unknown name, or arguments that fail the tool's schema) is fed back
+    to the model as a `tool` error message so it can retry - re-prompting can fix that.
+    A handler that throws is not recoverable that way, so it aborts immediately with
+    `ToolExecutionError`. Exceeding `maxTurns` (default 10) throws
+    `MaxToolTurnsExceededError`.
+  - `ToolDefinition.parameters` accepts Zod or `{ jsonSchema }` only. `pattern`/`validate`/
+    `xml` have no sensible named-parameters representation and throw clearly instead of
+    silently producing a broken tool definition.
+  - Available on every backend except `llamaCpp()` (local GGUF inference exposes no
+    tools API). `openai()`, `groq()`, `fireworks()`, `mistral()`, `openRouter()` and
+    `deepseek()` share one `openAiCompatibleToolCall()` implementation (identical wire
+    format); `anthropic()`, `ollama()` and `gemini()` each have their own.
+    `ModelCapabilities.toolCalling` reports this per backend - check the flag rather
+    than hardcoding the list.
+  - `gemini()` needs its own path: `@google/genai` models a tool turn as
+    `functionCall`/`functionResponse` Parts inside `contents` rather than OpenAI's flat
+    `tool_calls` array, uses `parametersJsonSchema` (plain JSON Schema) over the older
+    Type-enum `parameters`, and rejects a replayed `functionCall` Part that has lost its
+    opaque `thoughtSignature`. That token has no home on the shared `ToolCall` type, so
+    the backend keeps it per model instance and reattaches it on the next turn.
+  - Live-verified against Groq, Anthropic, Mistral and Gemini. `fireworks()`,
+    `openRouter()` and `deepseek()` take the identical OpenAI-compatible code path but
+    had no usable credentials to test against.
+
+### Fixed
+
+- **`llamaCpp()` declared no `capabilities` object at all** - the only backend that
+  didn't, so `model.capabilities` was `undefined` there while every other backend
+  returned one. It now reports `streaming: false`/`toolCalling: false` explicitly
+  (no token-delta iterator, no tools API) rather than saying nothing.
+- `ModelCapabilities.toolCalling`'s doc comment still read "Not yet built by any
+  backend", which shipped to consumers in the generated `.d.ts`.
+
+### Fixed
+
+- `toJsonSchema()` now strips `$schema` on the Zod v4 path too, not just the
+  `zod-to-json-schema` fallback. Zod v4's native `toJSONSchema()` emits its own
+  draft-2020-12 `$schema` key, which would otherwise reach backends that reject
+  extraneous top-level schema keys.
+
 ## [2.7.0] - 2026-07-31
 
 ### Added
