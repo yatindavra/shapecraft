@@ -3,7 +3,8 @@
 ## Install
 
 ```bash
-npm install @aviasole/shapecraft
+npm install @aviasole/shapecraft zod
+# or: pnpm add @aviasole/shapecraft zod
 ```
 
 `zod` is an optional peer dependency, used for the Zod schema examples throughout these docs - install it too if you're using Zod schemas (the common path): `npm install zod`.
@@ -11,9 +12,10 @@ npm install @aviasole/shapecraft
 Install a backend SDK as needed:
 
 ```bash
-npm install openai              # OpenAI, Fireworks, Mistral, OpenRouter (all OpenAI-compatible)
+npm install openai              # OpenAI, Fireworks, Mistral, OpenRouter, DeepSeek (all OpenAI-compatible)
 npm install groq-sdk            # Groq
 npm install @anthropic-ai/sdk   # Anthropic
+npm install @google/genai       # Gemini
 npm install node-llama-cpp      # Local .gguf models
 # Ollama: no extra SDK needed
 ```
@@ -45,7 +47,7 @@ Other libraries solve overlapping parts of this problem well. This is what's act
 
 | Capability | Instructor-js | zod-gpt | Vercel AI SDK (`generateObject`) | shapecraft |
 |---|---|---|---|---|
-| Providers | OpenAI only | OpenAI, Anthropic | OpenAI, Anthropic, Google, and more | OpenAI, Groq, Fireworks, Mistral, OpenRouter, Anthropic, Ollama, llama.cpp |
+| Providers | OpenAI only | OpenAI, Anthropic | OpenAI, Anthropic, Google, and more | OpenAI, Groq, Fireworks, Mistral, OpenRouter, DeepSeek, Gemini, Anthropic, Ollama, llama.cpp |
 | Local model support | - | - | no grammar-level constraint | Ollama / llama.cpp with token-level GBNF grammar |
 | Per-provider reliability signal | - | - | - | `guaranteeLevel`: `native` / `constrained` / `best-effort` |
 | Retry on schema failure | not documented | fixed 3 attempts, 60s timeout | configurable `maxRetries` | configurable, only on schema-validation failure |

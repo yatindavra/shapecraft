@@ -6,8 +6,10 @@ layout: page
 const backends = [
   { level: 'native', title: 'openai()', description: 'Server-side strict JSON schema enforcement' },
   { level: 'native', title: 'groq()', description: 'JSON mode' },
+  { level: 'native', title: 'deepseek()', description: 'JSON mode' },
   { level: 'native', title: 'fireworks()', description: 'Grammar-based cloud constraint' },
   { level: 'native', title: 'mistral()', description: 'JSON mode' },
+  { level: 'native', title: 'gemini()', description: 'Server-side JSON schema mode' },
   { level: 'constrained', title: 'ollama()', description: 'GBNF grammar, token-level' },
   { level: 'constrained', title: 'node-llama-cpp()', description: 'GBNF grammar, token-level, fully local' },
   { level: 'best-effort', title: 'anthropic()', description: 'Prompt + parse + retry' },
@@ -52,8 +54,8 @@ const capabilities = [
     on top if you need that.
   </FaqRow>
   <FaqRow question="Do I need to install every backend's SDK?">
-    No - each backend's SDK (openai, groq-sdk, @anthropic-ai/sdk, node-llama-cpp, ollama) is an
-    optional peer dependency. Install only the ones you use.
+    No - each backend's SDK (openai, groq-sdk, @anthropic-ai/sdk, @google/genai, node-llama-cpp,
+    ollama) is an optional peer dependency. Install only the ones you use.
   </FaqRow>
   <FaqRow question="Can I bring my own JSON Schema validator?">
     Yes - <code>jsonSchemaValidator</code> is pluggable on both <code>generate()</code> and

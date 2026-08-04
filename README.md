@@ -53,7 +53,7 @@ console.log(result.attempts);       // 1
 
 ## Documentation
 
-Full guide and reference docs — schema inputs, backends & guarantee levels, streaming, `createClient()` & middleware, batch generation, result metadata, timeouts, pluggable validation, the staged validation pipeline, FHIR presets, skill-based generation, multi-agent orchestration, tool calling, the CLI, and error handling: **[aviasoletechnologies.github.io/shapecraft](https://aviasoletechnologies.github.io/shapecraft/)**
+Full guide and reference docs — schema inputs, backends & guarantee levels, streaming, `createClient()` & middleware, batch generation, result metadata, timeouts, pluggable validation, the staged validation pipeline, FHIR presets, turnaround, skill-based generation, multi-agent orchestration, tool calling, the CLI, and error handling: **[aviasoletechnologies.github.io/shapecraft](https://aviasoletechnologies.github.io/shapecraft/)**
 
 ## Backends & Guarantee Levels
 
@@ -135,6 +135,7 @@ The gap that actually matters: none of the others tell you *how much* to trust a
 - **Pluggable JSON Schema validation**: swap in your own validator (or AJV) via `jsonSchemaValidator`
 - **Staged validation pipeline**: `semanticValidator`, `confidenceScorer`, `postProcessors` on top of structural validation
 - **FHIR R4 presets**: `Patient`, `Observation`, `Condition`, `MedicationRequest`, `Encounter`, via `@aviasole/shapecraft/fhir`, including a common `extension?: Extension[]` field
+- **Turnaround**: multi-turn collection via `generate(..., { turnaround: true })`, validated once over the whole transcript
 - **Skill-based generation**: `SkillRegistry` + `generateSkillCall()`/`runSkillLoop()` for model-driven dispatch to typed operations
 - **Multi-agent orchestration**: `defineAgent()` + `runAgents()` for chaining validated `generate()` calls, via `@aviasole/shapecraft/agentic`
 - **Tool calling**: `generateWithTools()` for native provider function-calling with validated arguments and a validated final answer

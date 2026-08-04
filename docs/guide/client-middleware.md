@@ -44,4 +44,6 @@ const cachingMiddleware: Middleware = async (ctx, next) => {
 };
 ```
 
-`createClient()` is purely additive - existing direct calls to `generate()`/`generateStream()` are unaffected. Middleware wraps `generate()` only; `generateStream()` picks up the client's `retry`/`timeoutMs`/`jsonSchemaValidator` defaults but isn't intercepted by middleware (its async-iterable shape doesn't fit the simple before/after `next()` model).
+Every client-level default (`retry`, `timeoutMs`, `jsonSchemaValidator`, `semanticValidator`, `confidenceScorer`, `minConfidence`, `postProcessors`) is merged into each call, and a per-call option always wins over the client-level one.
+
+`createClient()` is purely additive - existing direct calls to `generate()`/`generateStream()` are unaffected. Middleware wraps `generate()` only; `generateStream()` picks up the same client-level defaults but isn't intercepted by middleware (its async-iterable shape doesn't fit the simple before/after `next()` model). `turnaround` calls are out of scope for the client wrapper in v1 - call [`generate()` directly](/guide/turnaround) for those.

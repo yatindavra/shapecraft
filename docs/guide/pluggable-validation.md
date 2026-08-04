@@ -1,6 +1,6 @@
 # Pluggable JSON Schema Validation
 
-The built-in `jsonSchema` check (`checkJsonSchema`) is intentionally shallow - it validates types and `required` presence, not `minLength`/`maximum`/`pattern`/`$ref`/etc. Rather than expanding it, it's pluggable: supply your own validator (or wire up AJV) via `jsonSchemaValidator`.
+The built-in `jsonSchema` check (`checkJsonSchema`) is intentionally shallow - it validates `type`, `enum` membership, and `required` presence (recursing through `properties`/`items`), but not `minLength`/`maximum`/`pattern`/`oneOf`/`$ref`/etc. Rather than expanding it, it's pluggable: supply your own validator (or wire up AJV) via `jsonSchemaValidator`.
 
 ```typescript
 const strictValidator = (value: unknown, schema: Record<string, unknown>) => {

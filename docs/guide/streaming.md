@@ -34,4 +34,6 @@ for await (const event of stream2.events) {
 
 **Retries are visible, not silent.** Non-streaming `generate()` retries invisibly - a failed attempt is simply discarded and re-asked. With streaming, tokens have already been shown before validation can run, so a failed attempt can't be un-sent: it emits `attempt-failed` and starts a fresh `attempt-start`. A UI rendering partial text should clear its buffer on `attempt-failed`/`attempt-start`. There's no "only show validated tokens" mode - that would mean waiting for the whole response, which isn't streaming; use non-streaming `generate()` if you need that.
 
-**Streaming smoothness tracks guarantee level.** `native`/`constrained` backends (OpenAI, Groq, Ollama) rarely fail validation - the server already constrains tokens as they're generated - so streams almost never restart. `best-effort` (Anthropic) has no such constraint, so a stream may visibly restart more often.
+**Streaming smoothness tracks guarantee level.** `native`/`constrained` backends (OpenAI, Groq, Fireworks, Mistral, Gemini, DeepSeek, Ollama) rarely fail validation - the server already constrains tokens as they're generated - so streams almost never restart. `best-effort` backends (Anthropic, OpenRouter) have no such constraint, so a stream may visibly restart more often.
+
+`llamaCpp()` is the one backend without `generateStream()` - `generateStream()` falls back to a one-shot `generate()` for it, so `textStream` yields the whole response as a single delta. Check `model.capabilities.streaming` rather than assuming.

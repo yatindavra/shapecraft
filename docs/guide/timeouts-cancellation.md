@@ -21,4 +21,4 @@ setTimeout(() => controller.abort(), 5_000);
 const result = await generate(model, schema, prompt, { signal: controller.signal });
 ```
 
-Enforced at the core level for every backend - the retry loop always stops waiting once the timeout/signal fires, even against a backend that ignores cancellation entirely. All four built-in backends (`openai`, `groq`, `anthropic`, `ollama`) additionally forward the signal to the underlying SDK/fetch call for real request cancellation, not just abandonment. `TimeoutError` is never retried (it isn't a `SchemaViolationError`).
+Enforced at the core level for every backend - the retry loop always stops waiting once the timeout/signal fires, even against a backend that ignores cancellation entirely. Every cloud backend (`openai`, `groq`, `anthropic`, `ollama`, `fireworks`, `mistral`, `openRouter`, `deepseek`, `gemini`) additionally forwards the signal to the underlying SDK/fetch call for real request cancellation, not just abandonment. `llamaCpp()` is the exception - local inference gets the core-level guarantee only. `TimeoutError` is never retried (it isn't a `SchemaViolationError`).

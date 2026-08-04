@@ -204,9 +204,10 @@ console.log(result.data); // "1945-05-08"
 emit a token that breaks the grammar, so the output is valid *by construction*
 (`constrained`). On `fireworks()`, grammar mode is also a genuine token-level
 constraint, applied server-side. On every other backend (`openai`, `groq`, `mistral`,
-`anthropic`, `openRouter`, `ollama`) there is no grammar parameter, so the grammar is
-injected into the prompt (best-effort) and the returned string is validated against
-the grammar by a **bundled GBNF interpreter**, then retried on a mismatch.
+`anthropic`, `openRouter`, `deepseek`, `gemini`, `ollama`) there is no grammar
+parameter, so the grammar is injected into the prompt (best-effort) and the returned
+string is validated against the grammar by a **bundled GBNF interpreter**, then
+retried on a mismatch.
 
 ```typescript
 import { llamaCpp } from "@aviasole/shapecraft";
