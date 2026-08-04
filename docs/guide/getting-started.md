@@ -60,3 +60,5 @@ The gap that actually matters: none of the others tell you *how much* to trust a
 - [Schema Inputs](/guide/schema-inputs) - Zod, raw JSON Schema, regex, custom validator, XML, GBNF
 - [Backends & Guarantee Levels](/guide/backends) - which mechanism backs each provider
 - [Streaming](/guide/streaming) - incremental delivery with the same validation guarantee
+- [Multi-agent Orchestration](/guide/agentic) - chain validated `generate()` calls together
+- [Tool Calling](/guide/tool-calling) - native provider function-calling with validated arguments

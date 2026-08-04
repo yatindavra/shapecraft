@@ -20,6 +20,9 @@ const capabilities = [
   { title: 'Batch generation', description: 'Concurrency-capped generateBatch() across many prompts' },
   { title: 'FHIR R4 presets', description: 'Patient, Observation, Condition, MedicationRequest, Encounter' },
   { title: 'Skill-based generation', description: 'Model dispatches to registered skills, agentic loop support' },
+  { title: 'Tool calling', description: 'Native provider function-calling with validated arguments' },
+  { title: 'Multi-agent orchestration', description: 'runAgents() chains validated generate() calls with your own router' },
+  { title: 'Turnaround', description: 'Multi-turn collection, validated once over the whole transcript' },
   { title: 'CLI', description: 'npx shapecraft validate - check a JSON file against a schema, no code' },
 ]
 </script>
