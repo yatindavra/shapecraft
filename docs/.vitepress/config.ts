@@ -7,10 +7,9 @@ export default defineConfig({
   base: "/shapecraft/",
   cleanUrls: true,
   lastUpdated: true,
-  // Toggle enabled, defaulting first-time visitors to light; the toggle's choice
-  // persists in localStorage afterward. TS only types initialValue as 'dark', but
-  // VitePress interpolates it as a raw string at build time, so 'light' works too.
-  appearance: { initialValue: "light" } as unknown as "dark",
+  // Toggle enabled, defaulting first-time visitors to dark; the toggle's choice
+  // persists in localStorage afterward.
+  appearance: { initialValue: "dark" },
 
   // Favicon can't follow our own light/dark toggle (that's JS/page-scoped) - only
   // the OS/browser's own prefers-color-scheme, via the `media` attribute here. Two
