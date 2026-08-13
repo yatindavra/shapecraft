@@ -8,7 +8,7 @@
     "type": "git",
     "url": "https://github.com/aviasoletechnologies/shapecraft.git"
   },
-  "homepage": "https://github.com/aviasoletechnologies/shapecraft#readme",
+  "homepage": "https://aviasoletechnologies.github.io/shapecraft/",
   "bugs": {
     "url": "https://github.com/aviasoletechnologies/shapecraft/issues"
   },
@@ -57,7 +57,10 @@
     "test:watch": "vitest",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build && npm run typecheck && npm run test"
+    "prepublishOnly": "npm run build && npm run typecheck && npm run test",
+    "docs:dev": "npm --prefix docs run docs:dev",
+    "docs:build": "npm --prefix docs run docs:build",
+    "docs:preview": "npm --prefix docs run docs:preview"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.107.0",
