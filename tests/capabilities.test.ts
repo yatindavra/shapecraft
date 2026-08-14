@@ -14,11 +14,15 @@ import { together } from "../src/backends/together.js";
 import { cerebras } from "../src/backends/cerebras.js";
 import { grok } from "../src/backends/grok.js";
 import { openaiCompatible } from "../src/backends/openaiCompatible.js";
+import { llamaCpp } from "../src/backends/llamaCpp.js";
 import { mockModel } from "./helpers/index.js";
 
 const PersonSchema = z.object({ name: z.string(), age: z.number() });
 
 describe("ShapecraftModel.capabilities", () => {
+  // Every cloud backend now implements toolCall(): the OpenAI-wire-format ones
+  // share openAiCompatibleToolCall(), while anthropic, ollama and gemini each
+  // have their own. llamaCpp is the sole exception, asserted separately below.
   it.each([
     ["openai", openai({ model: "gpt-4o-mini" })],
     ["groq", groq({ model: "llama-3.3-70b-versatile" })],
@@ -27,13 +31,24 @@ describe("ShapecraftModel.capabilities", () => {
     ["fireworks", fireworks({ model: "accounts/fireworks/models/llama-v3p1-70b-instruct" })],
     ["mistral", mistral({ model: "mistral-large-latest" })],
     ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
-    ["gemini", gemini({ model: "gemini-flash-latest" })],
     ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
+    ["gemini", gemini({ model: "gemini-flash-latest" })],
+  ])("%s exposes streaming/chat/structuredOutput/skillDispatch/toolCalling true", (_name, model) => {
+    expect(model.capabilities).toEqual({
+      streaming: true,
+      chat: true,
+      structuredOutput: true,
+      toolCalling: true,
+      skillDispatch: true,
+    });
+  });
+
+  it.each([
     ["together", together({ model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" })],
     ["cerebras", cerebras({ model: "gpt-oss-120b" })],
     ["grok", grok({ model: "grok-4.5" })],
     ["openaiCompatible", openaiCompatible({ baseURL: "https://api.example.com/v1", apiKey: "test-key", model: "test-model" })],
-  ])("%s exposes streaming/chat/structuredOutput/skillDispatch true, toolCalling false", (_name, model) => {
+  ])("%s exposes streaming/chat/structuredOutput/skillDispatch true, toolCalling false - no toolCall() yet", (_name, model) => {
     expect(model.capabilities).toEqual({
       streaming: true,
       chat: true,
@@ -41,6 +56,85 @@ describe("ShapecraftModel.capabilities", () => {
       toolCalling: false,
       skillDispatch: true,
     });
+  });
+
+  it("llamaCpp reports streaming/toolCalling false - no delta iterator, no tools API", () => {
+    expect(llamaCpp({ modelPath: "/nonexistent/model.gguf" }).capabilities).toEqual({
+      streaming: false,
+      chat: true,
+      structuredOutput: true,
+      toolCalling: false,
+      skillDispatch: true,
+    });
+  });
+
+  // Guards the invariant that used to drift: a backend advertising toolCalling
+  // must actually implement toolCall(), and one that doesn't must not claim it.
+  // This is what let fireworks/mistral/openRouter/deepseek sit at `false` while
+  // the OpenAI-compatible helper they could reuse already existed.
+  it.each([
+    ["openai", openai({ model: "gpt-4o-mini" })],
+    ["groq", groq({ model: "llama-3.3-70b-versatile" })],
+    ["anthropic", anthropic({ model: "claude-haiku-4-5-20251001" })],
+    ["ollama", ollama({ model: "llama3.2" })],
+    ["fireworks", fireworks({ model: "accounts/fireworks/models/llama-v3p1-70b-instruct" })],
+    ["mistral", mistral({ model: "mistral-large-latest" })],
+    ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
+    ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
+    ["gemini", gemini({ model: "gemini-flash-latest" })],
+    ["together", together({ model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" })],
+    ["cerebras", cerebras({ model: "gpt-oss-120b" })],
+    ["grok", grok({ model: "grok-4.5" })],
+    ["openaiCompatible", openaiCompatible({ baseURL: "https://api.example.com/v1", apiKey: "test-key", model: "test-model" })],
+    ["llamaCpp", llamaCpp({ modelPath: "/nonexistent/model.gguf" })],
+  ])("%s: capabilities.toolCalling matches whether toolCall() actually exists", (_name, model) => {
+    expect(model.capabilities?.toolCalling).toBe(typeof model.toolCall === "function");
+  });
+
+  it.each([
+    ["openai", openai({ model: "gpt-4o-mini" })],
+    ["groq", groq({ model: "llama-3.3-70b-versatile" })],
+    ["anthropic", anthropic({ model: "claude-haiku-4-5-20251001" })],
+    ["ollama", ollama({ model: "llama3.2" })],
+    ["fireworks", fireworks({ model: "accounts/fireworks/models/llama-v3p1-70b-instruct" })],
+    ["mistral", mistral({ model: "mistral-large-latest" })],
+    ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
+    ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
+    ["gemini", gemini({ model: "gemini-flash-latest" })],
+    ["together", together({ model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" })],
+    ["cerebras", cerebras({ model: "gpt-oss-120b" })],
+    ["grok", grok({ model: "grok-4.5" })],
+    ["openaiCompatible", openaiCompatible({ baseURL: "https://api.example.com/v1", apiKey: "test-key", model: "test-model" })],
+    ["llamaCpp", llamaCpp({ modelPath: "/nonexistent/model.gguf" })],
+  ])("%s: capabilities.streaming matches whether generateStream() actually exists", (_name, model) => {
+    expect(model.capabilities?.streaming).toBe(typeof model.generateStream === "function");
+  });
+
+  // Every backend must declare capabilities at all - llamaCpp shipped without
+  // one, so `model.capabilities` was undefined there while every other backend
+  // returned an object.
+  it.each([
+    ["openai", openai({ model: "gpt-4o-mini" })],
+    ["groq", groq({ model: "llama-3.3-70b-versatile" })],
+    ["anthropic", anthropic({ model: "claude-haiku-4-5-20251001" })],
+    ["ollama", ollama({ model: "llama3.2" })],
+    ["fireworks", fireworks({ model: "accounts/fireworks/models/llama-v3p1-70b-instruct" })],
+    ["mistral", mistral({ model: "mistral-large-latest" })],
+    ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
+    ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
+    ["gemini", gemini({ model: "gemini-flash-latest" })],
+    ["together", together({ model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" })],
+    ["cerebras", cerebras({ model: "gpt-oss-120b" })],
+    ["grok", grok({ model: "grok-4.5" })],
+    ["openaiCompatible", openaiCompatible({ baseURL: "https://api.example.com/v1", apiKey: "test-key", model: "test-model" })],
+    ["llamaCpp", llamaCpp({ modelPath: "/nonexistent/model.gguf" })],
+  ])("%s: declares capabilities, chat() and generate()", (_name, model) => {
+    expect(model.capabilities).toBeDefined();
+    expect(typeof model.generate).toBe("function");
+    expect(typeof model.chat).toBe("function");
+    expect(model.capabilities?.chat).toBe(true);
+    expect(model.capabilities?.skillDispatch).toBe(true);
+    expect(model.id).toBeTruthy();
   });
 
   it.each([

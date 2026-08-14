@@ -1,6 +1,7 @@
-import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel } from "../types.js";
+import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel, ToolCallResponse, ToolDefinition } from "../types.js";
 import { buildStructuredPrompt } from "../core/schema.js";
 import { parseAndValidate } from "../core/parse.js";
+import { openAiCompatibleToolCall } from "../core/tools.js";
 import { isXmlInput, isGbnfInput } from "../core/validate.js";
 
 function wantsJsonMode(schema: SchemaInput): boolean {
@@ -52,7 +53,7 @@ export function deepseek(options: DeepseekBackendOptions = {}): ShapecraftModel 
   return {
     id: `deepseek:${modelId}`,
     guaranteeLevel: "native",
-    capabilities: { streaming: true, chat: true, structuredOutput: true, toolCalling: false, skillDispatch: true },
+    capabilities: { streaming: true, chat: true, structuredOutput: true, toolCalling: true, skillDispatch: true },
 
     async generate<T>(prompt: string, schema: SchemaInput<T>, systemPrompt?: string, callOptions?: ModelCallOptions): Promise<T> {
       const deepseekClient = await client();
@@ -116,6 +117,10 @@ export function deepseek(options: DeepseekBackendOptions = {}): ShapecraftModel 
         const delta = chunk.choices?.[0]?.delta?.content;
         if (delta) yield delta;
       }
+    },
+
+    async toolCall(messages: ChatMessage[], tools: ToolDefinition[], systemPrompt?: string): Promise<ToolCallResponse> {
+      return openAiCompatibleToolCall(await client(), modelId, messages, tools, systemPrompt);
     },
   };
 }

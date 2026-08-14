@@ -1,8 +1,9 @@
 import { z } from "zod";
-import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel } from "../types.js";
+import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel, ToolCallResponse, ToolDefinition } from "../types.js";
 import { toJsonSchema, buildStructuredPrompt } from "../core/schema.js";
 import { isZodSchema, isGbnfInput } from "../core/validate.js";
 import { parseAndValidate } from "../core/parse.js";
+import { openAiCompatibleToolCall } from "../core/tools.js";
 
 export interface OpenRouterBackendOptions {
   model?: string;
@@ -61,7 +62,7 @@ export function openRouter(options: OpenRouterBackendOptions = {}): ShapecraftMo
   return {
     id: `openrouter:${modelId}`,
     guaranteeLevel: "best-effort",
-    capabilities: { streaming: true, chat: true, structuredOutput: true, toolCalling: false, skillDispatch: true },
+    capabilities: { streaming: true, chat: true, structuredOutput: true, toolCalling: true, skillDispatch: true },
 
     async generate<T>(prompt: string, schema: SchemaInput<T>, systemPrompt?: string, callOptions?: ModelCallOptions): Promise<T> {
       const openRouterClient = await client();
@@ -125,6 +126,10 @@ export function openRouter(options: OpenRouterBackendOptions = {}): ShapecraftMo
         const delta = chunk.choices?.[0]?.delta?.content;
         if (delta) yield delta;
       }
+    },
+
+    async toolCall(messages: ChatMessage[], tools: ToolDefinition[], systemPrompt?: string): Promise<ToolCallResponse> {
+      return openAiCompatibleToolCall(await client(), modelId, messages, tools, systemPrompt);
     },
   };
 }

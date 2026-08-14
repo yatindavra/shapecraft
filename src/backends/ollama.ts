@@ -1,9 +1,30 @@
 import { z } from "zod";
-import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel } from "../types.js";
+import type { ChatMessage, ModelCallOptions, SchemaInput, ShapecraftModel, ToolCallResponse, ToolDefinition } from "../types.js";
 import { toJsonSchema, buildStructuredPrompt } from "../core/schema.js";
 import { isZodSchema } from "../core/validate.js";
 import { parseAndValidate } from "../core/parse.js";
 import { combineSignals } from "../core/timeout.js";
+import { toOpenAiCompatibleTools } from "../core/tools.js";
+
+// Verified live (2026-07-16, gemma4:e2b): Ollama's tool_calls[].function.arguments
+// is already a parsed object, NOT a JSON string like OpenAI/Groq - do not JSON.parse it.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toOllamaMessages(messages: ChatMessage[], systemPrompt?: string): any[] {
+  return [
+    ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []),
+    ...messages.map((m) => {
+      if (m.role === "tool") return { role: "tool" as const, tool_call_id: m.toolCallId, content: m.content };
+      if (m.toolCalls) {
+        return {
+          role: "assistant" as const,
+          content: m.content,
+          tool_calls: m.toolCalls.map((c) => ({ id: c.id, function: { name: c.name, arguments: c.args } })),
+        };
+      }
+      return { role: m.role, content: m.content };
+    }),
+  ];
+}
 
 export interface OllamaBackendOptions {
   model: string;
@@ -31,7 +52,7 @@ export function ollama(options: OllamaBackendOptions): ShapecraftModel {
   return {
     id: `ollama:${options.model}`,
     guaranteeLevel: "constrained",
-    capabilities: { streaming: true, chat: true, structuredOutput: true, toolCalling: false, skillDispatch: true },
+    capabilities: { streaming: true, chat: true, structuredOutput: true, toolCalling: true, skillDispatch: true },
 
     async generate<T>(prompt: string, schema: SchemaInput<T>, systemPrompt?: string, callOptions?: ModelCallOptions): Promise<T> {
       const { system, user } = buildStructuredPrompt(prompt, schema, systemPrompt);
@@ -141,6 +162,40 @@ export function ollama(options: OllamaBackendOptions): ShapecraftModel {
         // the underlying stream instead of leaking a locked reader.
         reader.releaseLock();
       }
+    },
+
+    async toolCall(messages: ChatMessage[], tools: ToolDefinition[], systemPrompt?: string, callOptions?: ModelCallOptions): Promise<ToolCallResponse> {
+      const response = await fetch(`${host}/api/chat`, {
+        signal: combineSignals(AbortSignal.timeout(timeoutMs), callOptions?.signal) ?? null,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: options.model,
+          messages: toOllamaMessages(messages, systemPrompt),
+          tools: toOpenAiCompatibleTools(tools),
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ollama error: ${response.status} ${response.statusText}`);
+      }
+
+      const json = (await response.json()) as {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        message?: { content?: string; tool_calls?: any[] };
+      };
+
+      const toolCalls = json.message?.tool_calls?.map((tc) => ({
+        id: tc.id as string,
+        name: tc.function.name as string,
+        args: tc.function.arguments,
+      }));
+
+      return {
+        ...(json.message?.content ? { content: json.message.content } : {}),
+        ...(toolCalls ? { toolCalls } : {}),
+      };
     },
   };
 }

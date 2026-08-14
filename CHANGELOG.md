@@ -1,6 +1,143 @@
 # Changelog
 
-## [2.4.0] - 2026-07-15
+## [2.9.0] - 2026-08-14
+
+### Added
+
+- **Four new backends**, all reached via the `openai` package pointed at a different
+  base URL (no new SDK dependency), continuing the `fireworks()`/`mistral()`/
+  `openRouter()`/`deepseek()` pattern:
+  - **`together()`** - Together AI. `guaranteeLevel: "native"` -
+    `response_format: { type: "json_schema", ... }` is server-side enforced, same
+    tier as `openai()`/`groq()`/`fireworks()`/`mistral()`.
+  - **`cerebras()`** - Cerebras. `guaranteeLevel: "native"`, strict `json_schema`
+    mode. Cerebras' strict mode rejects the `format` keyword outright ("Invalid
+    fields for schema with types ['string']: {'format'}") - confirmed live. Zod
+    v4's native `toJSONSchema()` adds `format: "email"`/`"uri"`/etc. for
+    `.email()`/`.url()`/similar refinements, which every other native-tier backend
+    accepts fine. The underlying `pattern` regex those refinements also emit still
+    enforces the same shape, so `cerebras()` strips `format` before sending -
+    loses no real validation, just a hint Cerebras specifically can't parse.
+  - **`grok()`** - xAI. `guaranteeLevel: "native"`, same server-side `json_schema`
+    enforcement. Exported as `grok()` rather than `xai()` - matches this repo's
+    convention of naming after the product users search for (`gemini()` not
+    `google()`).
+  - **`openaiCompatible()`** - generic escape hatch for any OpenAI-compatible
+    endpoint shapecraft doesn't name explicitly. `baseURL`, `apiKey`, and `model`
+    are all caller-supplied instead of hardcoded; no environment-variable fallback
+    for the API key exists for an arbitrary provider, so `apiKey` is required (both
+    at the type level and by a runtime guard). Defaults to `guaranteeLevel:
+    "best-effort"` since shapecraft can't verify an arbitrary endpoint actually
+    enforces `json_schema` server-side - pass `guaranteeLevel: "native"` explicitly
+    if you know your provider does.
+  - None of the four expose a genuine grammar/constrained-decoding mode, so a
+    `{ gbnf }` input on any of them is prompt-only best-effort, same as
+    `openai()`/`groq()`. None implement `toolCall()` yet -
+    `capabilities.toolCalling` is `false` on all four, unlike the nine backends
+    that gained it in 2.8.0 - the same `openAiCompatibleToolCall()` helper those
+    reuse would apply here too, just not wired up in this release.
+  - `together()`/`cerebras()`/`grok()` guard against the `openai` package's silent
+    fallback to `OPENAI_API_KEY` when a provider-specific key is unset, same
+    regression class `deepseek()` already guards against - each throws a clear
+    "Missing ... API key" error instead of silently authenticating against the
+    wrong provider.
+
+## [2.8.0] - 2026-07-31
+
+### Added
+
+- **Native tool/function-calling** - `generateWithTools(model, tools, schema, prompt, options?)`.
+  Passes the running message history plus your tool definitions to the model's own
+  `toolCall()` turn, executes requested tools locally (validating each call's arguments
+  against that tool's `parameters` schema first), feeds results back, and repeats until
+  the model stops asking for tools. The final answer is extracted through an ordinary
+  `generate()` call over the transcript, so the structured-output guarantee is identical
+  to any standalone `generate()` - not a weaker tool-calling-specific check.
+  - A bad tool call (unknown name, or arguments that fail the tool's schema) is fed back
+    to the model as a `tool` error message so it can retry - re-prompting can fix that.
+    A handler that throws is not recoverable that way, so it aborts immediately with
+    `ToolExecutionError`. Exceeding `maxTurns` (default 10) throws
+    `MaxToolTurnsExceededError`.
+  - `ToolDefinition.parameters` accepts Zod or `{ jsonSchema }` only. `pattern`/`validate`/
+    `xml` have no sensible named-parameters representation and throw clearly instead of
+    silently producing a broken tool definition.
+  - Available on every backend except `llamaCpp()` (local GGUF inference exposes no
+    tools API). `openai()`, `groq()`, `fireworks()`, `mistral()`, `openRouter()` and
+    `deepseek()` share one `openAiCompatibleToolCall()` implementation (identical wire
+    format); `anthropic()`, `ollama()` and `gemini()` each have their own.
+    `ModelCapabilities.toolCalling` reports this per backend - check the flag rather
+    than hardcoding the list.
+  - `gemini()` needs its own path: `@google/genai` models a tool turn as
+    `functionCall`/`functionResponse` Parts inside `contents` rather than OpenAI's flat
+    `tool_calls` array, uses `parametersJsonSchema` (plain JSON Schema) over the older
+    Type-enum `parameters`, and rejects a replayed `functionCall` Part that has lost its
+    opaque `thoughtSignature`. That token has no home on the shared `ToolCall` type, so
+    the backend keeps it per model instance and reattaches it on the next turn.
+  - Live-verified against Groq, Anthropic, Mistral and Gemini. `fireworks()`,
+    `openRouter()` and `deepseek()` take the identical OpenAI-compatible code path but
+    had no usable credentials to test against.
+
+### Fixed
+
+- **`llamaCpp()` declared no `capabilities` object at all** - the only backend that
+  didn't, so `model.capabilities` was `undefined` there while every other backend
+  returned one. It now reports `streaming: false`/`toolCalling: false` explicitly
+  (no token-delta iterator, no tools API) rather than saying nothing.
+- `ModelCapabilities.toolCalling`'s doc comment still read "Not yet built by any
+  backend", which shipped to consumers in the generated `.d.ts`.
+
+### Fixed
+
+- `toJsonSchema()` now strips `$schema` on the Zod v4 path too, not just the
+  `zod-to-json-schema` fallback. Zod v4's native `toJSONSchema()` emits its own
+  draft-2020-12 `$schema` key, which would otherwise reach backends that reject
+  extraneous top-level schema keys.
+
+## [2.7.0] - 2026-07-31
+
+### Added
+
+- Multi-agent orchestration via `@aviasole/shapecraft/agentic` entrypoint - `defineAgent()` +
+  `runAgents()`. Chains sequential, dependent `generate()` calls (each with its own
+  model/schema/role), threading one step's *validated* output into the next via a
+  caller-written `router` function. Each step keeps its own retry/guarantee-level behavior;
+  no new validation engine. See README `## Multi-agent orchestration`.
+  - `MaxTurnsExceededError` (thrown when a router never returns `"done"` within `maxTurns`)
+    is re-exported from the `/agentic` entrypoint, so catching it doesn't require a second
+    import from the package root.
+
+### Fixed
+
+- **README had three byte-identical copies of the `## Skill-Based Generation` section**
+  (a merge artifact, present since 2.4.0). Removed the two duplicates; no content change to
+  the section itself.
+- The README's multi-agent example gave its second agent no `buildPrompt`, so that step
+  received only the previous step's validated `{ category }` and never saw the original
+  request it was supposed to diagnose. The example now carries the original input forward,
+  matching what the test suite and the example app actually do.
+
+## [2.6.0] - 2026-07-15
+
+> Also contains everything listed under 2.5.0 below. That version was never published to
+> npm, so the five backends and two fixes it documents reached users for the first time in
+> this release.
+
+### Added
+
+- **CLI** - `npx shapecraft validate --schema schema.json --output output.json` validates
+  an already-produced JSON file against a raw JSON Schema file without writing any code.
+  Reuses `checkJsonSchema` (the same structural check `generate()` uses internally) -
+  `required` fields must be present and non-empty, `type`/`enum` must match, nested
+  `properties`/`items` are checked recursively. Exits `0` and prints `✓ ... matches ...`
+  on success; exits `1` with the specific violation on failure. New `bin` entry
+  (`src/cli.ts`, built alongside the existing `index`/`fhir` entrypoints) - no new
+  dependency, no argument-parsing library.
+
+## [2.5.0] - 2026-07-15 [NOT PUBLISHED]
+
+> **This version was not published to npm** - the registry goes directly from `2.4.0` to
+> `2.6.0`. Everything listed below shipped as part of 2.6.0 instead, so install 2.6.0 or
+> later to get any of it.
 
 ### Added
 
@@ -46,6 +183,13 @@
 
 ### Fixed
 
+- **`matchesGbnf`'s right-recursion depth limit is now enforced by the matcher, not by the
+  JS call stack.** It previously had no explicit limit at all - the "limit" was a native
+  stack-overflow `RangeError` being caught and re-thrown with a friendlier message, so the
+  actual cutoff varied with the platform, Node version and worker-thread stack size (under
+  5k nested references on some builds, past 8k on others). Rule references are now capped at
+  1000, giving the identical cutoff everywhere and failing fast instead of grinding for
+  seconds near the stack ceiling first. The `*`/`+` forms remain iterative and uncapped.
 - **`toJsonSchema()` emitted the legacy OpenAPI 3.0 boolean form for exclusive bounds**
   (`.positive()`/`.negative()`/`.gt()`/`.lt()`) - `exclusiveMinimum: true` + a separate
   `minimum`, instead of the numeric form real JSON Schema requires (`exclusiveMinimum: 0`).
@@ -56,7 +200,7 @@
   verified live against `groq()`, `anthropic()`, and `ollama()` with the schema that broke
   Mistral.
 
-## [2.3.0] - 2026-07-15
+## [2.4.0] - 2026-07-17
 
 ### Added
 
@@ -84,6 +228,17 @@
   - New `ModelCapabilities.skillDispatch: boolean`, `true` on all 4 built-in backends.
     `toolCalling` is untouched - it keeps meaning native provider function-calling, a
     different, still-unbuilt thing.
+
+## [2.3.0] - 2026-07-16
+
+### Added
+
+- **FHIR `Extension` support** - every R4 preset (`Patient`, `Observation`, `Condition`,
+  `MedicationRequest`, `Encounter`) now accepts an optional `extension?: Extension[]`. Common-
+  subset `Extension` type covers `url` plus `valueString`/`valueInteger`/`valueBoolean`/
+  `valueCodeableConcept` - real FHIR's `value[x]` has ~20 polymorphic variants; unsupported
+  ones pass through unvalidated (no `oneOf` support in `checkJsonSchema`) rather than being
+  rejected.
 
 ## [2.2.0] - 2026-07-10
 

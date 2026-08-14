@@ -48,6 +48,11 @@ export function llamaCpp(options: LlamaCppBackendOptions): ShapecraftModel {
   return {
     id: `llamacpp:${options.modelPath}`,
     guaranteeLevel: "constrained",
+    // The only backend that reports streaming/toolCalling false: local GGUF
+    // inference here exposes no token-delta iterator (the core falls back to a
+    // one-shot generate()) and no tools API. skillDispatch is true for the same
+    // reason it is everywhere - it only needs generate().
+    capabilities: { streaming: false, chat: true, structuredOutput: true, toolCalling: false, skillDispatch: true },
 
     async generate<T>(prompt: string, schema: SchemaInput<T>, systemPrompt?: string): Promise<T> {
       // Fail fast on a malformed grammar before loading a multi-GB model.
