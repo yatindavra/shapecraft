@@ -12,7 +12,7 @@ npm install @aviasole/shapecraft zod
 Install a backend SDK as needed:
 
 ```bash
-npm install openai              # OpenAI, Fireworks, Mistral, OpenRouter, DeepSeek (all OpenAI-compatible)
+npm install openai              # OpenAI, Fireworks, Mistral, OpenRouter, DeepSeek, Together, Cerebras, Grok, openaiCompatible
 npm install groq-sdk            # Groq
 npm install @anthropic-ai/sdk   # Anthropic
 npm install @google/genai       # Gemini
