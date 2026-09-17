@@ -8,14 +8,19 @@ import { isXmlInput, isGbnfInput, isZodSchema } from "./validate.js";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function toJsonSchema(schema: z.ZodType<any>): Record<string, unknown> {
   // zod-to-json-schema (last updated for Zod v3's internal shape) silently
-  // returns {} for a v4 schema instead of erroring - it doesn't recognize v4's
-  // reworked internals at all. Zod v4 ships its own native z.toJSONSchema(),
-  // which also emits the correct numeric exclusiveMinimum/exclusiveMaximum
-  // form (the third-party package's legacy boolean form was a separate bug).
+  // returns an essentially-empty schema ({ $schema: ... }, no properties/type at
+  // all) for a v4 schema instead of erroring - it doesn't recognize v4's reworked
+  // internals at all. Confirmed live: every "native"-guarantee backend that
+  // validates the schema itself strictly (Cerebras returned a 400) was silently
+  // sending this broken empty schema. Zod v4 ships its own native
+  // z.toJSONSchema(), which also emits the correct numeric exclusiveMinimum/
+  // exclusiveMaximum form (the third-party package's legacy boolean form was a
+  // separate, previously-known bug - see the Mistral 422 this comment used to
+  // describe).
   //
   // zod is an optional peerDependency (">=3.0.0"), so a consumer's schema may
   // have been built by a *different* zod install than the one bundled here
-  // (dual-package hazard). z4.toJSONSchema() reads a schema's own internal
+  // (dual-package hazard). z4.toJSONSchema() reads the schema's own internal
   // shape directly rather than calling a method on it, so calling it on a
   // v3-built schema throws ("Cannot read properties of undefined (reading
   // 'def')") even though our bundled zod is v4. Detect the schema instance's

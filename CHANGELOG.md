@@ -1,5 +1,47 @@
 # Changelog
 
+## [2.9.0] - 2026-08-14
+
+### Added
+
+- **Four new backends**, all reached via the `openai` package pointed at a different
+  base URL (no new SDK dependency), continuing the `fireworks()`/`mistral()`/
+  `openRouter()`/`deepseek()` pattern:
+  - **`together()`** - Together AI. `guaranteeLevel: "native"` -
+    `response_format: { type: "json_schema", ... }` is server-side enforced, same
+    tier as `openai()`/`groq()`/`fireworks()`/`mistral()`.
+  - **`cerebras()`** - Cerebras. `guaranteeLevel: "native"`, strict `json_schema`
+    mode. Cerebras' strict mode rejects the `format` keyword outright ("Invalid
+    fields for schema with types ['string']: {'format'}") - confirmed live. Zod
+    v4's native `toJSONSchema()` adds `format: "email"`/`"uri"`/etc. for
+    `.email()`/`.url()`/similar refinements, which every other native-tier backend
+    accepts fine. The underlying `pattern` regex those refinements also emit still
+    enforces the same shape, so `cerebras()` strips `format` before sending -
+    loses no real validation, just a hint Cerebras specifically can't parse.
+  - **`grok()`** - xAI. `guaranteeLevel: "native"`, same server-side `json_schema`
+    enforcement. Exported as `grok()` rather than `xai()` - matches this repo's
+    convention of naming after the product users search for (`gemini()` not
+    `google()`).
+  - **`openaiCompatible()`** - generic escape hatch for any OpenAI-compatible
+    endpoint shapecraft doesn't name explicitly. `baseURL`, `apiKey`, and `model`
+    are all caller-supplied instead of hardcoded; no environment-variable fallback
+    for the API key exists for an arbitrary provider, so `apiKey` is required (both
+    at the type level and by a runtime guard). Defaults to `guaranteeLevel:
+    "best-effort"` since shapecraft can't verify an arbitrary endpoint actually
+    enforces `json_schema` server-side - pass `guaranteeLevel: "native"` explicitly
+    if you know your provider does.
+  - None of the four expose a genuine grammar/constrained-decoding mode, so a
+    `{ gbnf }` input on any of them is prompt-only best-effort, same as
+    `openai()`/`groq()`. None implement `toolCall()` yet -
+    `capabilities.toolCalling` is `false` on all four, unlike the nine backends
+    that gained it in 2.8.0 - the same `openAiCompatibleToolCall()` helper those
+    reuse would apply here too, just not wired up in this release.
+  - `together()`/`cerebras()`/`grok()` guard against the `openai` package's silent
+    fallback to `OPENAI_API_KEY` when a provider-specific key is unset, same
+    regression class `deepseek()` already guards against - each throws a clear
+    "Missing ... API key" error instead of silently authenticating against the
+    wrong provider.
+
 ## [2.8.0] - 2026-07-31
 
 ### Added

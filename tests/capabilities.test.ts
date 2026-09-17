@@ -10,6 +10,10 @@ import { mistral } from "../src/backends/mistral.js";
 import { openRouter } from "../src/backends/openRouter.js";
 import { gemini } from "../src/backends/gemini.js";
 import { deepseek } from "../src/backends/deepseek.js";
+import { together } from "../src/backends/together.js";
+import { cerebras } from "../src/backends/cerebras.js";
+import { grok } from "../src/backends/grok.js";
+import { openaiCompatible } from "../src/backends/openaiCompatible.js";
 import { llamaCpp } from "../src/backends/llamaCpp.js";
 import { mockModel } from "./helpers/index.js";
 
@@ -39,6 +43,21 @@ describe("ShapecraftModel.capabilities", () => {
     });
   });
 
+  it.each([
+    ["together", together({ model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" })],
+    ["cerebras", cerebras({ model: "gpt-oss-120b" })],
+    ["grok", grok({ model: "grok-4.5" })],
+    ["openaiCompatible", openaiCompatible({ baseURL: "https://api.example.com/v1", apiKey: "test-key", model: "test-model" })],
+  ])("%s exposes streaming/chat/structuredOutput/skillDispatch true, toolCalling false - no toolCall() yet", (_name, model) => {
+    expect(model.capabilities).toEqual({
+      streaming: true,
+      chat: true,
+      structuredOutput: true,
+      toolCalling: false,
+      skillDispatch: true,
+    });
+  });
+
   it("llamaCpp reports streaming/toolCalling false - no delta iterator, no tools API", () => {
     expect(llamaCpp({ modelPath: "/nonexistent/model.gguf" }).capabilities).toEqual({
       streaming: false,
@@ -63,6 +82,10 @@ describe("ShapecraftModel.capabilities", () => {
     ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
     ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
     ["gemini", gemini({ model: "gemini-flash-latest" })],
+    ["together", together({ model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" })],
+    ["cerebras", cerebras({ model: "gpt-oss-120b" })],
+    ["grok", grok({ model: "grok-4.5" })],
+    ["openaiCompatible", openaiCompatible({ baseURL: "https://api.example.com/v1", apiKey: "test-key", model: "test-model" })],
     ["llamaCpp", llamaCpp({ modelPath: "/nonexistent/model.gguf" })],
   ])("%s: capabilities.toolCalling matches whether toolCall() actually exists", (_name, model) => {
     expect(model.capabilities?.toolCalling).toBe(typeof model.toolCall === "function");
@@ -78,6 +101,10 @@ describe("ShapecraftModel.capabilities", () => {
     ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
     ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
     ["gemini", gemini({ model: "gemini-flash-latest" })],
+    ["together", together({ model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" })],
+    ["cerebras", cerebras({ model: "gpt-oss-120b" })],
+    ["grok", grok({ model: "grok-4.5" })],
+    ["openaiCompatible", openaiCompatible({ baseURL: "https://api.example.com/v1", apiKey: "test-key", model: "test-model" })],
     ["llamaCpp", llamaCpp({ modelPath: "/nonexistent/model.gguf" })],
   ])("%s: capabilities.streaming matches whether generateStream() actually exists", (_name, model) => {
     expect(model.capabilities?.streaming).toBe(typeof model.generateStream === "function");
@@ -96,6 +123,10 @@ describe("ShapecraftModel.capabilities", () => {
     ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
     ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
     ["gemini", gemini({ model: "gemini-flash-latest" })],
+    ["together", together({ model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" })],
+    ["cerebras", cerebras({ model: "gpt-oss-120b" })],
+    ["grok", grok({ model: "grok-4.5" })],
+    ["openaiCompatible", openaiCompatible({ baseURL: "https://api.example.com/v1", apiKey: "test-key", model: "test-model" })],
     ["llamaCpp", llamaCpp({ modelPath: "/nonexistent/model.gguf" })],
   ])("%s: declares capabilities, chat() and generate()", (_name, model) => {
     expect(model.capabilities).toBeDefined();
@@ -116,6 +147,10 @@ describe("ShapecraftModel.capabilities", () => {
     ["openRouter", openRouter({ model: "openai/gpt-4o-mini" })],
     ["gemini", gemini({ model: "gemini-flash-latest" })],
     ["deepseek", deepseek({ model: "deepseek-v4-flash" })],
+    ["together", together({ model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" })],
+    ["cerebras", cerebras({ model: "gpt-oss-120b" })],
+    ["grok", grok({ model: "grok-4.5" })],
+    ["openaiCompatible", openaiCompatible({ baseURL: "https://api.example.com/v1", apiKey: "test-key", model: "test-model" })],
   ])("%s's declared capabilities match its actual duck-typed method presence", (_name, model) => {
     expect(model.capabilities?.streaming).toBe(typeof model.generateStream === "function");
     expect(model.capabilities?.chat).toBe(typeof model.chat === "function");
@@ -147,6 +182,70 @@ describe("ShapecraftModel.capabilities", () => {
       await expect(generate(deepseek({ model: "deepseek-v4-flash" }), PersonSchema, "extract data")).rejects.toThrow(
         /Missing DeepSeek API key/
       );
+    });
+  });
+
+  it("together() reports native - response_format: json_schema is server-side enforced, same tier as openai()/groq()/fireworks()/mistral()", () => {
+    expect(together({ model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" }).guaranteeLevel).toBe("native");
+  });
+
+  it("cerebras() reports native - strict json_schema mode is server-side enforced, same tier as openai()/groq()/fireworks()/mistral()/together()", () => {
+    expect(cerebras({ model: "gpt-oss-120b" }).guaranteeLevel).toBe("native");
+  });
+
+  it("grok() reports native - json_schema mode is server-side enforced, same tier as openai()/groq()/fireworks()/mistral()/together()/cerebras()", () => {
+    expect(grok({ model: "grok-4.5" }).guaranteeLevel).toBe("native");
+  });
+
+  describe("together()/cerebras()/grok() missing-key guards", () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    // Same regression class as deepseek()'s guard above - the openai package
+    // falls back to reading OPENAI_API_KEY itself when apiKey is undefined.
+    it("together() throws instead of silently falling back to OPENAI_API_KEY", async () => {
+      vi.stubEnv("TOGETHER_API_KEY", "");
+      vi.stubEnv("OPENAI_API_KEY", "sk-unrelated-openai-key");
+      await expect(
+        generate(together({ model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" }), PersonSchema, "extract data")
+      ).rejects.toThrow(/Missing Together API key/);
+    });
+
+    it("cerebras() throws instead of silently falling back to OPENAI_API_KEY", async () => {
+      vi.stubEnv("CEREBRAS_API_KEY", "");
+      vi.stubEnv("OPENAI_API_KEY", "sk-unrelated-openai-key");
+      await expect(generate(cerebras({ model: "gpt-oss-120b" }), PersonSchema, "extract data")).rejects.toThrow(
+        /Missing Cerebras API key/
+      );
+    });
+
+    it("grok() throws instead of silently falling back to OPENAI_API_KEY", async () => {
+      vi.stubEnv("XAI_API_KEY", "");
+      vi.stubEnv("OPENAI_API_KEY", "sk-unrelated-openai-key");
+      await expect(generate(grok({ model: "grok-4.5" }), PersonSchema, "extract data")).rejects.toThrow(/Missing xAI API key/);
+    });
+  });
+
+  describe("openaiCompatible()", () => {
+    it("defaults to best-effort - shapecraft can't verify an arbitrary endpoint enforces json_schema server-side", () => {
+      expect(openaiCompatible({ baseURL: "https://api.example.com/v1", apiKey: "test-key", model: "test-model" }).guaranteeLevel).toBe(
+        "best-effort"
+      );
+    });
+
+    it("accepts an explicit guaranteeLevel override for a caller who knows their provider enforces json_schema", () => {
+      expect(
+        openaiCompatible({ baseURL: "https://api.example.com/v1", apiKey: "test-key", model: "test-model", guaranteeLevel: "native" })
+          .guaranteeLevel
+      ).toBe("native");
+    });
+
+    // No env-var fallback exists for an arbitrary provider, so apiKey must be
+    // required at the type level - this confirms the runtime guard fires too
+    // (e.g. a caller passing an empty string through at runtime despite the type).
+    it("throws a clear error when apiKey is empty, rather than silently falling back to OPENAI_API_KEY", async () => {
+      await expect(
+        generate(openaiCompatible({ baseURL: "https://api.example.com/v1", apiKey: "", model: "test-model" }), PersonSchema, "extract data")
+      ).rejects.toThrow(/openaiCompatible\(\) requires \{ apiKey \}/);
     });
   });
 

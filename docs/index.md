@@ -14,6 +14,10 @@ const backends = [
   { level: 'constrained', title: 'node-llama-cpp()', description: 'GBNF grammar, token-level, fully local' },
   { level: 'best-effort', title: 'anthropic()', description: 'Prompt + parse + retry' },
   { level: 'best-effort', title: 'openRouter()', description: 'Pass-through, depends on underlying model' },
+  { level: 'native', title: 'together()', description: 'Server-side JSON schema mode' },
+  { level: 'native', title: 'cerebras()', description: 'Server-side strict JSON schema mode' },
+  { level: 'native', title: 'grok()', description: 'Server-side JSON schema mode' },
+  { level: 'best-effort', title: 'openaiCompatible()', description: 'Generic factory for any OpenAI-compatible endpoint' },
 ]
 
 const capabilities = [

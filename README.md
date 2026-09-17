@@ -22,7 +22,7 @@ npm install @aviasole/shapecraft zod
 Install backend SDK as needed:
 
 ```bash
-npm install openai              # OpenAI, Fireworks, Mistral, OpenRouter, DeepSeek (all OpenAI-compatible)
+npm install openai              # OpenAI, Fireworks, Mistral, OpenRouter, DeepSeek, Together, Cerebras, Grok, openaiCompatible
 npm install groq-sdk            # Groq
 npm install @anthropic-ai/sdk   # Anthropic
 npm install @google/genai       # Gemini
@@ -69,6 +69,10 @@ Full guide and reference docs — schema inputs, backends & guarantee levels, st
 | `llamaCpp()` | `constrained` | Token-level GBNF grammar (local `.gguf` via node-llama-cpp) |
 | `anthropic()` | `best-effort` | Prompt + parse + retry |
 | `openRouter()` | `best-effort` | Pass-through to many providers - `response_format` support varies by underlying model |
+| `together()` | `native` | Server-side JSON schema mode |
+| `cerebras()` | `native` | Server-side strict JSON schema mode |
+| `grok()` | `native` | Server-side JSON schema mode |
+| `openaiCompatible()` | `best-effort` (override to `native` if your provider enforces it) | Generic factory - see below |
 
 > `llamaCpp()` is `constrained` for a `{ gbnf }` input (token-level). For other schema
 > types (Zod / jsonSchema / …) it currently runs a best-effort prompt path until the
@@ -90,9 +94,36 @@ Full guide and reference docs — schema inputs, backends & guarantee levels, st
 > migration bridge for OpenAI users, not its primary integration path, and doesn't expose
 > `responseJsonSchema` (plain JSON Schema, what `toJsonSchema()` already produces) —
 > only the older `responseSchema` (Gemini's own Type-enum OpenAPI-subset shape).
+>
+> `together()`/`cerebras()`/`grok()` all reuse the `openai` package pointed at their
+> respective base URLs, same pattern as `fireworks()`/`mistral()`/`openRouter()` - no new
+> SDK dependency. None expose a genuine grammar/constrained-decoding mode, so a `{ gbnf }`
+> input on any of the three is prompt-only best-effort, same as `openai()`/`groq()`.
+
+### `openaiCompatible()`
+
+For any OpenAI-compatible provider shapecraft doesn't name explicitly - `baseURL`,
+`apiKey`, and `model` are all caller-supplied instead of hardcoded per provider:
 
 ```typescript
-import { openai, groq, fireworks, mistral, gemini, openRouter, deepseek, ollama, anthropic, llamaCpp } from "@aviasole/shapecraft";
+import { openaiCompatible } from "@aviasole/shapecraft";
+
+const custom = openaiCompatible({
+  baseURL: "https://api.some-provider.example/v1",
+  apiKey: process.env.SOME_PROVIDER_API_KEY,
+  model: "some-model-id",
+  guaranteeLevel: "native", // optional - omit to default to "best-effort"
+});
+```
+
+Defaults to `guaranteeLevel: "best-effort"` since shapecraft can't verify an arbitrary
+endpoint actually enforces `json_schema` server-side. Pass `guaranteeLevel: "native"`
+explicitly if you know your provider does, for accurate reporting. Unlike the named
+backends, there's no environment-variable fallback for the API key - there's no single
+conventional env-var name for an arbitrary provider, so `apiKey` is required.
+
+```typescript
+import { openai, groq, fireworks, mistral, gemini, openRouter, deepseek, ollama, anthropic, llamaCpp, together, cerebras, grok, openaiCompatible } from "@aviasole/shapecraft";
 
 const gpt       = openai({ model: "gpt-4o-mini" });
 const fast      = groq({ model: "llama-3.3-70b-versatile" });
@@ -114,7 +145,7 @@ Other libraries solve overlapping parts of this problem well. This is what's act
 
 | Capability | Instructor-js | zod-gpt | Vercel AI SDK (`generateObject`) | shapecraft |
 |---|---|---|---|---|
-| Providers | OpenAI only | OpenAI, Anthropic | OpenAI, Anthropic, Google, and more | OpenAI, Groq, Fireworks, Mistral, OpenRouter, DeepSeek, Gemini, Anthropic, Ollama, llama.cpp |
+| Providers | OpenAI only | OpenAI, Anthropic | OpenAI, Anthropic, Google, and more | OpenAI, Groq, Fireworks, Mistral, OpenRouter, DeepSeek, Together, Cerebras, xAI, Gemini, Anthropic, Ollama, llama.cpp, any OpenAI-compatible endpoint |
 | Local model support | - | - | no grammar-level constraint | Ollama / llama.cpp with token-level GBNF grammar |
 | Per-provider reliability signal | - | - | - | `guaranteeLevel`: `native` / `constrained` / `best-effort` |
 | Retry on schema failure | not documented | fixed 3 attempts, 60s timeout | configurable `maxRetries` | configurable, only on schema-validation failure |
